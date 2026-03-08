@@ -1,0 +1,65 @@
+{
+  "name": "Python",
+  "runArgs": [
+    "--sysctl",
+    "net.ipv6.conf.all.disable_ipv6=1"
+  ],
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
+  "features": {
+    "ghcr.io/devcontainers/features/common-utils:2": {
+      "installZsh": true,
+      "installOhMyZsh": true,
+      "upgradePackages": true,
+      "username": "vscode"
+    },
+    "ghcr.io/devcontainers-extra/features/apt-packages:1": {
+      "packages": "socat"
+    },
+    "ghcr.io/devcontainers/features/python:1": {
+      "version": "3.12"
+    },
+    "ghcr.io/devcontainers/features/node:1": {
+      "version": "lts"
+    }
+  },
+  "postCreateCommand": ".devcontainer/post-create-setup.sh",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "google.geminicodeassist",
+        "saoudrizwan.claude-dev",
+        "GitHub.copilot-nightly",
+        "dbaeumer.vscode-eslint",
+        "esbenp.prettier-vscode",
+        "svelte.svelte-vscode",
+        "usernamehw.errorlens",
+        "streetsidesoftware.code-spell-checker",
+        "eamodio.gitlens",
+        "donjayamanne.githistory",
+        "mhutchie.git-graph",
+        "redhat.vscode-yaml",
+        "tamasfe.even-better-toml",
+        "pejmannikram.vscode-auto-scroll",
+        "naumovs.color-highlight",
+        "oderwat.indent-rainbow",
+        "wix.vscode-import-cost",
+        "mkxml.vscode-filesize",
+        "christian-kohler.npm-intellisense",
+        "yatki.vscode-surround",
+        "GitHub.vscode-pull-request-github",
+        "shyykoserhiy.git-autoconfig",
+        "actboy168.tasks",
+        "humao.rest-client",
+        "alefragnani.project-manager",
+        "mutantdino.resourcemonitor",
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "ms-azuretools.vscode-docker",
+        "ms-playwright.playwright",
+        "vitest.explorer"
+      ]
+    }
+  }
+}
