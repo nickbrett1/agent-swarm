@@ -1,0 +1,3 @@
+setup:
+  project: agent-swarm
+  config: dev

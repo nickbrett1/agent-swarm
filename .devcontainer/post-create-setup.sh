@@ -39,9 +39,6 @@ echo "INFO: Configuring git safe directory..."
 git config --global --add safe.directory /workspaces/agent-swarm
 
 
-echo "INFO: Installing Playwright and its Chromium dependencies..."
-npx --yes playwright install --with-deps chromium
-echo "INFO: Playwright Chromium installation complete."
 
 
 echo "INFO: Installing Gemini CLI and Specify CLI..."
