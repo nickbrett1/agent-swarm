@@ -57,7 +57,8 @@
         "ms-python.python",
         "ms-python.vscode-pylance",
         "ms-azuretools.vscode-docker",
-        "THEARC.doppler"
+        "THEARC.doppler",
+        "bierner.markdown-mermaid"
       ]
     }
   }

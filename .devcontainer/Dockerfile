@@ -5,6 +5,9 @@ RUN apt-get update && export DEBIAN_FRONTEND=noninteractive \
     && echo "deb [signed-by=/usr/share/keyrings/doppler-archive-keyring.gpg] https://packages.doppler.com/public/cli/deb/debian any-version main" | tee /etc/apt/sources.list.d/doppler-cli.list \
     && apt-get update && apt-get install -y doppler
 
+# Install Playwright system dependencies
+RUN pip install playwright && playwright install-deps
+
 USER vscode
 
 RUN if [ -d "$HOME/.oh-my-zsh" ]; then rm -rf "$HOME/.oh-my-zsh"; fi \

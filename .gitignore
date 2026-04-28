@@ -29,3 +29,6 @@ __pycache__/
 venv/
 *.manifest
 
+# Dagster
+.tmp_dagster*
+

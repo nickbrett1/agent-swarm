@@ -50,5 +50,8 @@ fi
 sudo npm install -g @google/gemini-cli @specifyapp/cli
 echo "INFO: Gemini CLI and Specify CLI installation complete."
 
+echo "INFO: Installing Playwright browsers..."
+(cd /workspaces/agent-swarm/shop-agents && uv sync && uv run playwright install chromium)
+
 echo "Setup bridget to access Chrome DevTools Protocol over a secure tunnel..."
 socat TCP-LISTEN:9222,fork,bind=127.0.0.1 TCP:host.docker.internal:9222 &
