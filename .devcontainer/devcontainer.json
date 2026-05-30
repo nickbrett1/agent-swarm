@@ -1,5 +1,5 @@
 {
-  "name": "Java",
+  "name": "Python",
   "runArgs": [
     "--sysctl",
     "net.ipv6.conf.all.disable_ipv6=1"
@@ -18,11 +18,11 @@
       "packages": "socat"
     },
     "ghcr.io/devcontainers/features/python:1": {},
-    "ghcr.io/devcontainers/features/java:1": {
-      "version": "21"
-    },
     "ghcr.io/devcontainers/features/node:1": {
       "version": "lts"
+    },
+    "ghcr.io/devcontainers/features/java:1": {
+      "version": "21"
     }
   },
   "postCreateCommand": ".devcontainer/post-create-setup.sh",
@@ -56,6 +56,8 @@
         "humao.rest-client",
         "alefragnani.project-manager",
         "mutantdino.resourcemonitor",
+        "ms-python.python",
+        "ms-python.vscode-pylance",
         "SonarSource.sonarlint-vscode",
         "redhat.java",
         "vscjava.vscode-java-debug",

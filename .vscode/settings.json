@@ -1,8 +1,3 @@
 {
-    "python.defaultInterpreterPath": "${workspaceFolder}/shop-agents/.venv/bin/python",
-    "cSpell.words": [
-        "crewai",
-        "dagster",
-        "litellm"
-    ],
+  "python.defaultInterpreterPath": "${workspaceFolder}/agent-swarm/.venv/bin/python"
 }

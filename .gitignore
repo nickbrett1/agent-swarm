@@ -21,6 +21,16 @@ Thumbs.db
 # Optional
 wrangler.jsonc
 
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv
+venv/
+*.manifest
+
+# Dagster
+.tmp_dagster*
 
 # Java
 *.class
