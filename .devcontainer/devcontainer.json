@@ -1,5 +1,5 @@
 {
-  "name": "Python",
+  "name": "Java",
   "runArgs": [
     "--sysctl",
     "net.ipv6.conf.all.disable_ipv6=1"
@@ -17,8 +17,9 @@
     "ghcr.io/devcontainers-extra/features/apt-packages:1": {
       "packages": "socat"
     },
-    "ghcr.io/devcontainers/features/python:1": {
-      "version": "3.12"
+    "ghcr.io/devcontainers/features/python:1": {},
+    "ghcr.io/devcontainers/features/java:1": {
+      "version": "21"
     },
     "ghcr.io/devcontainers/features/node:1": {
       "version": "lts"
@@ -30,7 +31,7 @@
       "extensions": [
         "google.geminicodeassist",
         "saoudrizwan.claude-dev",
-        "GitHub.copilot-nightly",
+        "GitHub.copilot",
         "dbaeumer.vscode-eslint",
         "esbenp.prettier-vscode",
         "svelte.svelte-vscode",
@@ -41,6 +42,7 @@
         "mhutchie.git-graph",
         "redhat.vscode-yaml",
         "tamasfe.even-better-toml",
+        "bierner.markdown-mermaid",
         "pejmannikram.vscode-auto-scroll",
         "naumovs.color-highlight",
         "oderwat.indent-rainbow",
@@ -54,11 +56,11 @@
         "humao.rest-client",
         "alefragnani.project-manager",
         "mutantdino.resourcemonitor",
-        "ms-python.python",
-        "ms-python.vscode-pylance",
-        "ms-azuretools.vscode-docker",
-        "THEARC.doppler",
-        "bierner.markdown-mermaid"
+        "SonarSource.sonarlint-vscode",
+        "redhat.java",
+        "vscjava.vscode-java-debug",
+        "vscjava.vscode-java-test",
+        "doppler.doppler-vscode"
       ]
     }
   }

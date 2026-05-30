@@ -9,6 +9,31 @@
         "-y",
         "chrome-devtools-mcp"
       ]
+    },
+    "sonarqube": {
+      "command": "docker",
+      "args": [
+        "run",
+        "--rm",
+        "-i",
+        "--name",
+        "sonarqube-mcp-server",
+        "sonarqube-mcp-server"
+      ],
+      "env": {
+        "SONAR_TOKEN": "$SONAR_TOKEN",
+        "SONAR_HOST_URL": "$SONAR_HOST_URL"
+      }
+    },
+    "circleci": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-circleci"
+      ],
+      "env": {
+        "CIRCLE_API_TOKEN": "$CIRCLE_API_TOKEN"
+      }
     }
   }
 }

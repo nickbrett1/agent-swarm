@@ -138,5 +138,5 @@ gemini-dev() {
 
   echo "Starting Gemini with Doppler..."
   # Execute the main command, passing along all arguments you gave to the function
-  doppler run --project webapp --config dev -- gemini "$@"
+  doppler run --project agent-swarm --config dev -- gemini "$@"
 }

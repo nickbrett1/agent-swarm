@@ -1,0 +1,85 @@
+version: 2.1
+orbs:
+  node: circleci/node@5.0.2
+  ggshield: gitguardian/ggshield@1
+
+jobs:
+  build:
+    executor: node/default
+    steps:
+      - checkout
+      - restore_cache:
+          keys:
+            - v1-deps-{{ checksum "package.json" }}
+            - v1-deps-
+      - run:
+          name: Install Packages
+          command: |
+            if [ -f package-lock.json ]; then
+              npm ci
+            else
+              npm install
+            fi
+      - save_cache:
+          paths:
+            - node_modules
+          key: v1-deps-{{ checksum "package.json" }}
+
+      - run:
+          name: Setup Wrangler Config
+          command: |
+            chmod +x scripts/setup-wrangler-config.sh
+            ./scripts/setup-wrangler-config.sh
+      - run:
+          name: Build
+          command: npm run build
+
+
+  deploy-to-cloudflare:
+    executor: node/default
+    steps:
+      - checkout
+      - restore_cache:
+          keys:
+            - v1-deps-{{ checksum "package.json" }}
+            - v1-deps-
+      - run:
+          name: Install Packages
+          command: |
+            if [ -f package-lock.json ]; then
+              npm ci
+            else
+              npm install
+            fi
+      - save_cache:
+          paths:
+            - node_modules
+          key: v1-deps-{{ checksum "package.json" }}
+      - run:
+          name: Setup Wrangler Config
+          command: |
+            chmod +x scripts/setup-wrangler-config.sh
+            ./scripts/setup-wrangler-config.sh
+      - run:
+          name: Build
+          command: npm run build
+      - run:
+          name: Deploy to Cloudflare Workers
+          command: npx wrangler deploy
+workflows:
+  build-and-test:
+    jobs:
+      - build:
+          context: common
+
+
+      - deploy-to-cloudflare:
+          context: common
+          requires:
+            - build
+
+      - ggshield/scan:
+          name: ggshield-scan
+          context: common
+          base_revision: << pipeline.git.base_revision >>
+          revision: <<pipeline.git.revision>>
