@@ -73,7 +73,7 @@ This provides a UI to monitor the agent's progress.
 
 ```bash
 cd shop-agents
-uv run dg dev
+uv run poe dev
 ```
 *   Open [http://localhost:3000](http://localhost:3000) in your browser.
 *   Navigate to **Jobs** -> **shop_agent_job**.

@@ -153,21 +153,9 @@ class PurchaseTool(BaseTool):
                     await asyncio.sleep(2)
                     
                     print("Submitting payment...")
-                    pay_button_selectors = "button[type=\"submit\"], button:has-text(\"Pay\"), button:has-text(\"Subscribe\"), button:has-text(\"Start trial\")"
-                    pay_button = None
-                    if await page.locator(pay_button_selectors).first.is_visible():
-                        pay_button = page.locator(pay_button_selectors).first
-                    if not pay_button:
-                        for frame in page.frames:
-                            try:
-                                if await frame.locator(pay_button_selectors).first.is_visible():
-                                    pay_button = frame.locator(pay_button_selectors).first
-                                    break
-                            except: continue
-                    if pay_button:
-                        await pay_button.click()
-                    else:
-                        await page.get_by_role("button", name="Pay").first.click()
+                    # Try to find the pay button more flexibly
+                    pay_button = page.get_by_role("button", name="Pay").or_(page.locator('button[type="submit"]')).or_(page.locator('button:has-text("Pay")'))
+                    await pay_button.first.click()
                     
                     # Wait for success redirect
                     print("Waiting for success redirect...")

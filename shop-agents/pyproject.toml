@@ -1,16 +1,15 @@
 [project]
 name = "shop-agents"
 version = "0.1.0"
-description = "Add your description here"
-readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "crewai>=1.10.1",
+    "crewai[google-genai]>=1.10.1",
     "dagster",
     "dagster-dg-cli>=1.13.0",
     "dagster-webserver",
     "litellm>=1.82.1",
     "playwright>=1.58.0",
+    "poethepoet>=0.46.0",
     "pydantic-settings>=2.10.1",
     "python-dotenv>=1.1.1",
 ]
@@ -28,3 +27,8 @@ directory_type = "project"
 [tool.dg.project]
 root_module = "shop_agents"
 code_location_target_module = "shop_agents.defs"
+
+[tool.poe.tasks]
+dev = "doppler run -- dg dev"
+sync = "uv sync && uv run playwright install chromium"
+check-quotas = "doppler run -- python scripts/check_quotas.py"

@@ -6,13 +6,12 @@ This is the core implementation of the autonomous shopping agents.
 
 1. **Install dependencies:**
    ```bash
-   uv sync
-   uv run playwright install chromium
+   uv run poe sync
    ```
 
-2. **Run Dagster:**
+2. **Run Dagster (with Doppler secrets):**
    ```bash
-   uv run dg dev
+   uv run poe dev
    ```
 
 ## Key Components
