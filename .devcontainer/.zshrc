@@ -118,8 +118,8 @@ fi
 DISABLE_AUTO_UPDATE=true
 DISABLE_UPDATE_PROMPT=true
 
-# A robust function to run Gemini with Doppler, ensuring no stale SonarQube containers exist.
-gemini-dev() {
+# A robust function to run Antigravity with Doppler, ensuring no stale SonarQube containers exist.
+agy-dev() {
   # Only check for Docker containers if Docker is installed
   if command -v docker &> /dev/null; then
     # Define the name of the container to check for
@@ -136,7 +136,7 @@ gemini-dev() {
     fi
   fi
 
-  echo "Starting Gemini with Doppler..."
+  echo "Starting Antigravity with Doppler..."
   # Execute the main command, passing along all arguments you gave to the function
-  doppler run --project agent-swarm --config dev -- gemini "$@"
+  doppler run --project agent-swarm --config dev -- agy "$@"
 }

@@ -41,14 +41,15 @@ git config --global --add safe.directory /workspaces/agent-swarm
 
 
 
-echo "INFO: Installing Gemini CLI and Specify CLI..."
+echo "INFO: Installing Antigravity CLI and Specify CLI..."
 if ! command -v npm &> /dev/null; then
     echo "npm not found. Installing nodejs and npm..."
     sudo apt-get update
     sudo apt-get install -y nodejs npm
 fi
-sudo npm install -g @google/gemini-cli @specifyapp/cli
-echo "INFO: Gemini CLI and Specify CLI installation complete."
+sudo npm install -g @specifyapp/cli
+curl -fsSL https://antigravity.google/cli/install.sh | bash
+echo "INFO: Antigravity CLI and Specify CLI installation complete."
 
 echo "Setup bridget to access Chrome DevTools Protocol over a secure tunnel..."
 socat TCP-LISTEN:9222,fork,bind=127.0.0.1 TCP:host.docker.internal:9222 &
