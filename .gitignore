@@ -45,3 +45,5 @@ venv/
 *.tar.gz
 *.rar
 target/
+
+.antigravitycli
