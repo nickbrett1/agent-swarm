@@ -34,10 +34,10 @@ if ! command -v wrangler &> /dev/null; then
 fi
 
 # 1. Check if already logged in via Doppler API Token (Highly recommended for multi-container)
-if doppler run --project {{projectName}} --config dev -- env | grep -q "CLOUDFLARE_API_TOKEN"; then
+if doppler run --project agent-swarm --config dev -- env | grep -q "CLOUDFLARE_API_TOKEN"; then
   echo "✅ Found CLOUDFLARE_API_TOKEN in Doppler. Using token for authentication."
   # Verify connectivity
-  if doppler run --project {{projectName}} --config dev -- npx wrangler whoami > /dev/null 2>&1; then
+  if doppler run --project agent-swarm --config dev -- npx wrangler whoami > /dev/null 2>&1; then
     echo "✅ Successfully authenticated via Doppler token. Skipping interactive login."
     exit 0
   else
