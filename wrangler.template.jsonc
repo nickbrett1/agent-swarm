@@ -1,20 +1,38 @@
 {
-	"name": "agent-swarm",
-	"main": "src/index.js",
-	"compatibility_date": "2026-05-31",
-	"compatibility_flags": [
-		"nodejs_compat_v2"
-	],
-	"assets": {
-		"binding": "ASSETS",
-		"directory": ".svelte-kit/cloudflare"
-	},
-	"observability": {
-		"logs": {
-			"enabled": true,
-			"head_sampling_rate": 1,
-			"invocation_logs": true,
-			"persist": true
-		}
-	}
+  "name": "agent-swarm",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-05-31",
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
+  "browser": {
+    "binding": "MYBROWSER",
+    "remote": true
+  },
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "ShopperAgent",
+        "class_name": "ShopperAgent"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["ShopperAgent"]
+    }
+  ],
+  "vars": {
+    "GOOGLE_API_KEY": "${GOOGLE_API_KEY}",
+    "SHOP_URL": "https://fintechnick.com/shop"
+  },
+  "observability": {
+    "logs": {
+      "enabled": true,
+      "head_sampling_rate": 1,
+      "invocation_logs": true,
+      "persist": true
+    }
+  }
 }

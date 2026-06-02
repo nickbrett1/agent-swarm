@@ -1,0 +1,20 @@
+{
+  "name": "agent-swarm",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "./scripts/run-wrangler-dev.sh",
+    "deploy": "wrangler deploy",
+    "config": "./scripts/setup-wrangler-config.sh"
+  },
+  "dependencies": {
+    "agents": "latest",
+    "@cloudflare/puppeteer": "latest"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "latest",
+    "typescript": "^5.4.5",
+    "wrangler": "latest"
+  }
+}

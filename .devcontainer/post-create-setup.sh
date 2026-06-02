@@ -53,3 +53,11 @@ echo "INFO: Antigravity CLI and Specify CLI installation complete."
 
 echo "Setup bridget to access Chrome DevTools Protocol over a secure tunnel..."
 socat TCP-LISTEN:9222,fork,bind=127.0.0.1 TCP:host.docker.internal:9222 &
+
+echo "INFO: Creating mock xdg-open to prevent wrangler remote browser hangs..."
+sudo tee /usr/local/bin/xdg-open << 'EOF'
+#!/bin/bash
+echo "Mock xdg-open called with: $@"
+exit 0
+EOF
+sudo chmod +x /usr/local/bin/xdg-open
