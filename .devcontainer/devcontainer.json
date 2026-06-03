@@ -17,7 +17,6 @@
     "ghcr.io/devcontainers-extra/features/apt-packages:1": {
       "packages": "socat"
     },
-    "ghcr.io/devcontainers/features/python:1": {},
     "ghcr.io/devcontainers/features/node:1": {
       "version": "lts"
     },
@@ -68,8 +67,6 @@
         "humao.rest-client",
         "alefragnani.project-manager",
         "mutantdino.resourcemonitor",
-        "ms-python.python",
-        "ms-python.vscode-pylance",
         "SonarSource.sonarlint-vscode",
         "redhat.java",
         "vscjava.vscode-java-debug",
