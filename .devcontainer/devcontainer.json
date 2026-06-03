@@ -26,7 +26,8 @@
     }
   },
   "mounts": [
-    "source=wrangler-config,target=/home/vscode/.wrangler,type=volume"
+    "source=wrangler-config,target=/home/vscode/.wrangler,type=volume",
+    "source=ftn-doppler-config,target=/home/node/.doppler,type=volume"
   ],
   "forwardPorts": [
     8788,
