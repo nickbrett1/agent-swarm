@@ -11,6 +11,12 @@ export interface InteractiveElement {
   xpath: string; // Used to locate the element dynamically
 }
 
+// Selectors for Stripe Checkout inputs inside iframe/page
+const STRIPE_CARD_SELECTORS = ['input#cardNumber', 'input[name="cardnumber"]', 'input[placeholder*="1234"]', 'input[aria-label*="Card number"]'];
+const STRIPE_EXPIRY_SELECTORS = ['input#cardExpiry', 'input[name="exp-date"]', 'input[placeholder*="MM"]', 'input[aria-label*="Expiration"]'];
+const STRIPE_CVC_SELECTORS = ['input#cardCvc', 'input[name="cvc"]', 'input[placeholder*="CVC"]', 'input[aria-label*="CVC"]'];
+const STRIPE_NAME_SELECTORS = ['input#billingName', 'input[name="name"]', 'input[placeholder*="Name"]'];
+
 export class PuppeteerBrowserHelper {
   private browser: Browser | null = null;
   private page: Page | null = null;
@@ -332,11 +338,6 @@ export class PuppeteerBrowserHelper {
       let expiryFilled = false;
       let cvcFilled = false;
 
-      // Selectors for card details inside iframe
-      const cardSelectors = ['input#cardNumber', 'input[name="cardnumber"]', 'input[placeholder*="1234"]', 'input[aria-label*="Card number"]'];
-      const expirySelectors = ['input#cardExpiry', 'input[name="exp-date"]', 'input[placeholder*="MM"]', 'input[aria-label*="Expiration"]'];
-      const cvcSelectors = ['input#cardCvc', 'input[name="cvc"]', 'input[placeholder*="CVC"]', 'input[aria-label*="CVC"]'];
-
       // Helper to fill a field in a frame
       async function fillInFrame(frame: Frame, selectors: string[], value: string): Promise<boolean> {
         for (const selector of selectors) {
@@ -362,21 +363,20 @@ export class PuppeteerBrowserHelper {
       const fillFramesSequentially = async (index: number): Promise<void> => {
         if (index >= frames.length) return;
         const frame = frames[index];
-        if (!cardFilled) cardFilled = await fillInFrame(frame, cardSelectors, card);
-        if (!expiryFilled) expiryFilled = await fillInFrame(frame, expirySelectors, expiry);
-        if (!cvcFilled) cvcFilled = await fillInFrame(frame, cvcSelectors, cvc);
+        if (!cardFilled) cardFilled = await fillInFrame(frame, STRIPE_CARD_SELECTORS, card);
+        if (!expiryFilled) expiryFilled = await fillInFrame(frame, STRIPE_EXPIRY_SELECTORS, expiry);
+        if (!cvcFilled) cvcFilled = await fillInFrame(frame, STRIPE_CVC_SELECTORS, cvc);
         await fillFramesSequentially(index + 1);
       };
       await fillFramesSequentially(0);
 
       // Fill name on card if present in main page or frame
-      const nameSelectors = ['input#billingName', 'input[name="name"]', 'input[placeholder*="Name"]'];
       let nameFilled = false;
       
       const fillNameSequentially = async (index: number): Promise<void> => {
         if (index >= frames.length) return;
         const frame = frames[index];
-        if (!nameFilled) nameFilled = await fillInFrame(frame, nameSelectors, name);
+        if (!nameFilled) nameFilled = await fillInFrame(frame, STRIPE_NAME_SELECTORS, name);
         await fillNameSequentially(index + 1);
       };
       await fillNameSequentially(0);
