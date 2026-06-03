@@ -221,14 +221,14 @@ export class PuppeteerBrowserHelper {
     if (elements.length === 0) {
       textSummary += "(No interactive elements found. The page might still be loading or has no clickable items.)\n";
     } else {
-      elements.forEach((el) => {
+      textSummary += elements.map((el) => {
         const labelParts: string[] = [];
         if (el.text) labelParts.push(`text: "${el.text}"`);
         if (el.placeholder) labelParts.push(`placeholder/label: "${el.placeholder}"`);
         if (el.name) labelParts.push(`name: "${el.name}"`);
         const details = labelParts.length > 0 ? ` (${labelParts.join(', ')})` : '';
-        textSummary += `- [${el.id}] <${el.tag}${el.type ? ' type=' + el.type : ''}>${details}\n`;
-      });
+        return `- [${el.id}] <${el.tag}${el.type ? ' type=' + el.type : ''}>${details}`;
+      }).join('\n') + '\n';
     }
 
     return { elements, textSummary };
