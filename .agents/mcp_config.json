@@ -1,7 +1,8 @@
 {
   "mcpServers": {
     "svelte": {
-      "httpUrl": "https://mcp.svelte.dev/mcp"
+      "url": "https://mcp.svelte.dev/mcp",
+      "serverURL": "https://mcp.svelte.dev/mcp"
     },
     "chrome-devtools": {
       "command": "npx",
@@ -11,16 +12,14 @@
       ]
     },
     "sonarqube": {
-      "command": "docker",
+      "command": "npx",
       "args": [
-        "run",
-        "--rm",
-        "-i",
-        "--name",
-        "sonarqube-mcp-server",
+        "-y",
         "sonarqube-mcp-server"
       ],
       "env": {
+        "SONARQUBE_URL": "$SONAR_HOST_URL",
+        "SONARQUBE_TOKEN": "$SONAR_TOKEN",
         "SONAR_TOKEN": "$SONAR_TOKEN",
         "SONAR_HOST_URL": "$SONAR_HOST_URL"
       }
@@ -29,9 +28,10 @@
       "command": "npx",
       "args": [
         "-y",
-        "@modelcontextprotocol/server-circleci"
+        "@circleci/mcp-server-circleci"
       ],
       "env": {
+        "CIRCLECI_TOKEN": "$CIRCLECI_TOKEN",
         "CIRCLE_API_TOKEN": "$CIRCLE_API_TOKEN"
       }
     }

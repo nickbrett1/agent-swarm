@@ -94,11 +94,27 @@ export class ShopperAgent extends Agent<Env, ShopperState> {
             if (!decision.targetId) {
               throw new Error("Action 'click' requires a 'targetId'");
             }
+            // Check if the clicked element is a submit or pay button to wait longer
+            const element = pageData.elements.find(e => e.id === decision.targetId);
+            const isPayOrSubmit = element && (
+              element.text.toLowerCase().includes("pay") ||
+              element.text.toLowerCase().includes("submit") ||
+              element.text.toLowerCase().includes("complete") ||
+              element.text.toLowerCase().includes("buy") ||
+              element.text.toLowerCase().includes("purchase")
+            );
+
             const clickOk = await helper.clickElement(decision.targetId);
             if (!clickOk) {
               console.warn(`Click on ${decision.targetId} failed, trying to find alternatives...`);
             }
-            await helper.wait(1500); // Wait for dynamic layout/routing
+
+            if (isPayOrSubmit) {
+              console.log("Pay/Submit/Buy button clicked, waiting 4 seconds for transaction/navigation to settle...");
+              await helper.wait(4000);
+            } else {
+              await helper.wait(1500); // Wait for dynamic layout/routing
+            }
             break;
 
           case "type":
@@ -203,42 +219,51 @@ Guidelines:
    */
   private async queryLLM(prompt: string): Promise<LLMResponse> {
     if (this.env.GOOGLE_API_KEY) {
-      try {
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${this.env.GOOGLE_API_KEY}`;
-        const response = await fetch(url, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json"
-          },
-          body: JSON.stringify({
-            contents: [
-              {
-                parts: [
-                  {
-                    text: prompt
-                  }
-                ]
+      const maxRetries = 3;
+      for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+          const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${this.env.GOOGLE_API_KEY}`;
+          const response = await fetch(url, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+              contents: [
+                {
+                  parts: [
+                    {
+                      text: prompt
+                    }
+                  ]
+                }
+              ],
+              generationConfig: {
+                responseMimeType: "application/json"
               }
-            ],
-            generationConfig: {
-              responseMimeType: "application/json"
-            }
-          })
-        });
+            })
+          });
 
-        if (!response.ok) {
-          throw new Error(`Gemini API returned status ${response.status}: ${await response.text()}`);
+          if (!response.ok) {
+            throw new Error(`Gemini API returned status ${response.status}: ${await response.text()}`);
+          }
+
+          const data: any = await response.json();
+          const textResponse = data.candidates?.[0]?.content?.parts?.[0]?.text;
+          if (!textResponse) {
+            throw new Error("Empty response from Gemini API");
+          }
+
+          return JSON.parse(textResponse.trim()) as LLMResponse;
+        } catch (err: any) {
+          console.warn(`Gemini API call attempt ${attempt} failed:`, err.message || err);
+          if (attempt === maxRetries) {
+            console.error("Gemini API call failed after max retries, falling back to Workers AI:", err);
+          } else {
+            console.log("Waiting 2 seconds before retrying Gemini API...");
+            await new Promise((resolve) => setTimeout(resolve, 2000));
+          }
         }
-
-        const data: any = await response.json();
-        const textResponse = data.candidates?.[0]?.content?.parts?.[0]?.text;
-        if (!textResponse) {
-          throw new Error("Empty response from Gemini API");
-        }
-
-        return JSON.parse(textResponse.trim()) as LLMResponse;
-      } catch (err) {
-        console.error("Gemini API call failed, falling back to Workers AI:", err);
       }
     }
 

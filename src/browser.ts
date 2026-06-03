@@ -59,7 +59,7 @@ export class PuppeteerBrowserHelper {
 
     let elementsData;
     let attempts = 0;
-    const maxAttempts = 2;
+    const maxAttempts = 3;
 
     while (attempts < maxAttempts) {
       try {
@@ -117,6 +117,11 @@ export class PuppeteerBrowserHelper {
             const style = window.getComputedStyle(el);
             if (style.display === 'none' || style.visibility === 'hidden' || parseFloat(style.opacity) === 0) return;
 
+            // Skip disabled elements
+            if ((el as HTMLButtonElement | HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement).disabled) return;
+            if (el.getAttribute('aria-disabled') === 'true') return;
+            if (el.classList.contains('disabled')) return;
+
             // Clean up innerText/text context
             let text = (el.innerText || el.textContent || '').trim();
             if (!text && el.tagName === 'INPUT') {
@@ -146,16 +151,26 @@ export class PuppeteerBrowserHelper {
         attempts++;
         console.warn(`Evaluation attempt ${attempts} failed:`, err.message);
         
-        // If we are on a success/thank-you page, we don't need to try again, just return dummy data
-        const url = await this.getPageUrl();
-        if (url.toLowerCase().includes("success") || 
-            url.toLowerCase().includes("thank") || 
-            url.toLowerCase().includes("complete")) {
-          console.log("Success/thank-you page detected during error. Returning dummy response.");
-          return { 
-            elements: [], 
-            textSummary: `Redirected to success page: ${url}` 
-          };
+        // Wait for page to finish navigating/loading if in progress
+        try {
+          if (this.page) {
+            await this.page.waitForNavigation({ waitUntil: "load", timeout: 2000 });
+          }
+        } catch {}
+
+        try {
+          const url = await this.getPageUrl();
+          if (url && (url.toLowerCase().includes("success") || 
+              url.toLowerCase().includes("thank") || 
+              url.toLowerCase().includes("complete"))) {
+            console.log("Success/thank-you page detected during error. Returning dummy response.");
+            return { 
+              elements: [], 
+              textSummary: `Redirected to success page: ${url}` 
+            };
+          }
+        } catch (urlErr: any) {
+          console.warn("Failed to get page URL in evaluation catch block:", urlErr.message);
         }
         
         if (attempts >= maxAttempts) {
