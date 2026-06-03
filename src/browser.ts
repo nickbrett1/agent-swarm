@@ -235,29 +235,43 @@ export class PuppeteerBrowserHelper {
   }
 
   /**
-   * Clicks an element by its interactive ID.
+   * Helper method to look up an element by ID and fetch its Handle and XPath.
    */
-  async clickElement(id: string): Promise<boolean> {
+  private async findElement(id: string) {
     if (!this.page) throw new Error("Browser not initialized");
     const xpath = this.elementsMap.get(id);
     if (!xpath) {
       console.warn(`Element ID ${id} not found in map`);
-      return false;
+      return null;
     }
+    const elements = await this.page.$$(`xpath/${xpath}`);
+    return {
+      element: elements.length > 0 ? elements[0] : null,
+      xpath
+    };
+  }
+
+  /**
+   * Clicks an element by its interactive ID.
+   */
+  async clickElement(id: string): Promise<boolean> {
+    if (!this.page) throw new Error("Browser not initialized");
+    const result = await this.findElement(id);
+    if (!result) return false;
+
+    const { element, xpath } = result;
 
     console.log(`Clicking element: ${id} (XPath: ${xpath})`);
     try {
-      // Find element using xpath
-      const elements = await this.page.$$(`xpath/${xpath}`);
-      if (elements.length > 0) {
-        await elements[0].scrollIntoView();
-        await elements[0].click();
+      if (element) {
+        await element.scrollIntoView();
+        await element.click();
         return true;
       }
       // Fallback: evaluate click directly via JS
       const clicked = await this.page.evaluate((xp) => {
-        const result = document.evaluate(xp, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
-        const node = result.singleNodeValue as HTMLElement;
+        const res = document.evaluate(xp, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
+        const node = res.singleNodeValue as HTMLElement;
         if (node) {
           node.scrollIntoView({ block: 'center' });
           node.click();
@@ -277,21 +291,19 @@ export class PuppeteerBrowserHelper {
    */
   async typeElement(id: string, text: string): Promise<boolean> {
     if (!this.page) throw new Error("Browser not initialized");
-    const xpath = this.elementsMap.get(id);
-    if (!xpath) {
-      console.warn(`Element ID ${id} not found in map`);
-      return false;
-    }
+    const result = await this.findElement(id);
+    if (!result) return false;
+
+    const { element, xpath } = result;
 
     console.log(`Typing "${text}" into element: ${id}`);
     try {
-      const elements = await this.page.$$(`xpath/${xpath}`);
-      if (elements.length > 0) {
-        await elements[0].scrollIntoView();
+      if (element) {
+        await element.scrollIntoView();
         // Clear existing value if possible
-        await elements[0].click({ clickCount: 3 });
+        await element.click({ clickCount: 3 });
         await this.page.keyboard.press('Backspace');
-        await elements[0].type(text);
+        await element.type(text);
         return true;
       }
       return false;
