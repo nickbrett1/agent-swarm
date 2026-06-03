@@ -224,11 +224,12 @@ Guidelines:
       const maxRetries = 3;
       for (let attempt = 1; attempt <= maxRetries; attempt++) {
         try {
-          const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${this.env.GOOGLE_API_KEY}`;
+          const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent`;
           const response = await fetch(url, {
             method: "POST",
             headers: {
-              "Content-Type": "application/json"
+              "Content-Type": "application/json",
+              "x-goog-api-key": this.env.GOOGLE_API_KEY
             },
             body: JSON.stringify({
               contents: [
