@@ -8,6 +8,10 @@ export interface Env {
   AI: Ai;
   GOOGLE_API_KEY?: string;
   SHOP_URL?: string;
+  STRIPE_TEST_CARD?: string;
+  STRIPE_TEST_EXPIRY?: string;
+  STRIPE_TEST_CVC?: string;
+  STRIPE_TEST_NAME?: string;
 }
 
 export interface ShopperState {
@@ -199,10 +203,10 @@ export class ShopperAgent extends Agent<Env, ShopperState> {
 
           case "stripe_fill":
             // Automate Stripe iframe using test credentials from worker config or defaults
-            const card = "4242 4242 4242 4242";
-            const expiry = "12/28";
-            const cvc = "123";
-            const name = "Agent Shopper";
+            const card = this.env.STRIPE_TEST_CARD || "4242 4242 4242 4242";
+            const expiry = this.env.STRIPE_TEST_EXPIRY || "12/28";
+            const cvc = this.env.STRIPE_TEST_CVC || "123";
+            const name = this.env.STRIPE_TEST_NAME || "Agent Shopper";
             console.log("Filling Stripe checkout details...");
             const stripeOk = await helper.handleStripeIframe(card, expiry, cvc, name);
             if (stripeOk) {
