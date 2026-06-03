@@ -66,7 +66,7 @@ export class PuppeteerBrowserHelper {
       try {
         // We execute a script in the browser context to find and label interactive elements
         elementsData = await this.page.evaluate(() => {
-          const results: Array<{
+          interface ElementData {
             tag: string;
             type: string;
             text: string;
@@ -74,9 +74,8 @@ export class PuppeteerBrowserHelper {
             name: string;
             role: string;
             xpath: string;
-          }> = [];
+          }
 
-          // Helper to generate a simple XPath for an element
           function getXPath(element: Element): string {
             if (element.id) {
               return `//*[@id="${element.id}"]`;
@@ -113,44 +112,52 @@ export class PuppeteerBrowserHelper {
             return paths.length ? '/' + paths.join('/') : '';
           }
 
-          // Query standard interactive selectors
+          function isVisible(el: HTMLElement): boolean {
+            const rect = el.getBoundingClientRect();
+            if (rect.width === 0 || rect.height === 0) return false;
+            const style = window.getComputedStyle(el);
+            if (style.display === 'none' || style.visibility === 'hidden' || parseFloat(style.opacity) === 0) return false;
+            return true;
+          }
+
+          function isDisabled(el: HTMLElement): boolean {
+            if ((el as HTMLButtonElement | HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement).disabled) return true;
+            if (el.getAttribute('aria-disabled') === 'true') return true;
+            if (el.classList.contains('disabled')) return true;
+            return false;
+          }
+
+          function getCleanText(el: HTMLElement): string {
+            let text = (el.innerText || el.textContent || '').trim();
+            if (!text && el.tagName === 'INPUT') {
+              text = (el as HTMLInputElement).value || '';
+            }
+            if (text.length > 80) {
+              text = text.substring(0, 77) + "...";
+            }
+            return text;
+          }
+
+          function extractElementData(el: HTMLElement): ElementData {
+            return {
+              tag: el.tagName.toLowerCase(),
+              type: (el as HTMLInputElement).type || '',
+              text: getCleanText(el),
+              placeholder: (el as HTMLInputElement).placeholder || el.getAttribute('aria-label') || '',
+              name: el.getAttribute('name') || el.getAttribute('id') || '',
+              role: el.getAttribute('role') || '',
+              xpath: getXPath(el)
+            };
+          }
+
+          const results: ElementData[] = [];
           const selector = 'button, a, input, select, textarea, [role="button"], [onclick]';
           const nodes = Array.from(document.querySelectorAll(selector));
 
           nodes.forEach((node) => {
             const el = node as HTMLElement;
-            
-            // Skip hidden or tiny elements
-            const rect = el.getBoundingClientRect();
-            if (rect.width === 0 || rect.height === 0) return;
-            const style = window.getComputedStyle(el);
-            if (style.display === 'none' || style.visibility === 'hidden' || parseFloat(style.opacity) === 0) return;
-
-            // Skip disabled elements
-            if ((el as HTMLButtonElement | HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement).disabled) return;
-            if (el.getAttribute('aria-disabled') === 'true') return;
-            if (el.classList.contains('disabled')) return;
-
-            // Clean up innerText/text context
-            let text = (el.innerText || el.textContent || '').trim();
-            if (!text && el.tagName === 'INPUT') {
-              text = (el as HTMLInputElement).value || '';
-            }
-            
-            // Truncate overly long texts (e.g. nested containers)
-            if (text.length > 80) {
-              text = text.substring(0, 77) + "...";
-            }
-
-            results.push({
-              tag: el.tagName.toLowerCase(),
-              type: (el as HTMLInputElement).type || '',
-              text: text,
-              placeholder: (el as HTMLInputElement).placeholder || el.getAttribute('aria-label') || '',
-              name: el.getAttribute('name') || el.getAttribute('id') || '',
-              role: el.getAttribute('role') || '',
-              xpath: getXPath(el)
-            });
+            if (!isVisible(el) || isDisabled(el)) return;
+            results.push(extractElementData(el));
           });
 
           return results;
