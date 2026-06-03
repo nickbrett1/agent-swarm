@@ -32,8 +32,9 @@ export class PuppeteerBrowserHelper {
       try {
         console.log("Closing browser session...");
         await this.browser.close();
-      } catch (err: any) {
-        console.warn("Ignoring error closing browser (might already be closed):", err.message);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.warn("Ignoring error closing browser (might already be closed):", message);
       } finally {
         this.browser = null;
         this.page = null;
@@ -57,7 +58,7 @@ export class PuppeteerBrowserHelper {
   async getInteractiveElements(): Promise<{ elements: InteractiveElement[]; textSummary: string }> {
     if (!this.page) throw new Error("Browser not initialized");
 
-    let elementsData;
+    let elementsData: any[] = [];
     let attempts = 0;
     const maxAttempts = 3;
 
@@ -81,25 +82,33 @@ export class PuppeteerBrowserHelper {
               return `//*[@id="${element.id}"]`;
             }
             const paths: string[] = [];
-            for (; element && element.nodeType === Node.ELEMENT_NODE; element = element.parentNode as Element) {
+            let current: Node | null = element;
+            while (current && current.nodeType === Node.ELEMENT_NODE) {
               let index = 0;
               let hasSiblingWithSameTag = false;
-              for (let sibling = element.previousSibling; sibling; sibling = sibling.previousSibling) {
-                if (sibling.nodeType === Node.DOCUMENT_TYPE_NODE) continue;
-                if (sibling.nodeName === element.nodeName) {
+              
+              let sibling = current.previousSibling;
+              while (sibling) {
+                if (sibling.nodeType !== Node.DOCUMENT_TYPE_NODE && sibling.nodeName === current.nodeName) {
                   index++;
                   hasSiblingWithSameTag = true;
                 }
+                sibling = sibling.previousSibling;
               }
-              for (let sibling = element.nextSibling; sibling; sibling = sibling.nextSibling) {
-                if (sibling.nodeName === element.nodeName) {
+              
+              sibling = current.nextSibling;
+              while (sibling) {
+                if (sibling.nodeName === current.nodeName) {
                   hasSiblingWithSameTag = true;
                   break;
                 }
+                sibling = sibling.nextSibling;
               }
-              const tagName = element.nodeName.toLowerCase();
+              
+              const tagName = current.nodeName.toLowerCase();
               const pathIndex = hasSiblingWithSameTag ? `[${index + 1}]` : '';
               paths.unshift(tagName + pathIndex);
+              current = current.parentNode;
             }
             return paths.length ? '/' + paths.join('/') : '';
           }
@@ -147,16 +156,19 @@ export class PuppeteerBrowserHelper {
           return results;
         });
         break; // Success, break out of loop
-      } catch (err: any) {
+      } catch (err) {
         attempts++;
-        console.warn(`Evaluation attempt ${attempts} failed:`, err.message);
+        const message = err instanceof Error ? err.message : String(err);
+        console.warn(`Evaluation attempt ${attempts} failed:`, message);
         
         // Wait for page to finish navigating/loading if in progress
         try {
           if (this.page) {
             await this.page.waitForNavigation({ waitUntil: "load", timeout: 2000 });
           }
-        } catch {}
+        } catch {
+          // Ignore timeout or other errors during navigation wait, as they are expected
+        }
 
         try {
           const url = await this.getPageUrl();
@@ -169,8 +181,9 @@ export class PuppeteerBrowserHelper {
               textSummary: `Redirected to success page: ${url}` 
             };
           }
-        } catch (urlErr: any) {
-          console.warn("Failed to get page URL in evaluation catch block:", urlErr.message);
+        } catch (urlErr) {
+          const urlErrMsg = urlErr instanceof Error ? urlErr.message : String(urlErr);
+          console.warn("Failed to get page URL in evaluation catch block:", urlErrMsg);
         }
         
         if (attempts >= maxAttempts) {
@@ -184,8 +197,11 @@ export class PuppeteerBrowserHelper {
     this.elementsMap.clear();
     const elements: InteractiveElement[] = [];
 
+    // Ensure elementsData is defined to prevent typescript possibly undefined error
+    const safeElementsData = elementsData || [];
+
     // Assign clean sequential IDs and update our mapping map
-    elementsData.forEach((el, index) => {
+    safeElementsData.forEach((el, index) => {
       const id = `${el.tag}_${index}`;
       this.elementsMap.set(id, el.xpath);
       elements.push({
@@ -319,24 +335,35 @@ export class PuppeteerBrowserHelper {
               }, value);
               return true;
             }
-          } catch {}
+          } catch {
+            // Ignore if selector is not found in this frame
+          }
         }
         return false;
       }
 
-      // Try main page and then frames
-      for (const frame of frames) {
+      // Try main page and then frames sequentially to avoid await in loops rule
+      const fillFramesSequentially = async (index: number): Promise<void> => {
+        if (index >= frames.length) return;
+        const frame = frames[index];
         if (!cardFilled) cardFilled = await fillInFrame(frame, cardSelectors, card);
         if (!expiryFilled) expiryFilled = await fillInFrame(frame, expirySelectors, expiry);
         if (!cvcFilled) cvcFilled = await fillInFrame(frame, cvcSelectors, cvc);
-      }
+        await fillFramesSequentially(index + 1);
+      };
+      await fillFramesSequentially(0);
 
       // Fill name on card if present in main page or frame
       const nameSelectors = ['input#billingName', 'input[name="name"]', 'input[placeholder*="Name"]'];
       let nameFilled = false;
-      for (const frame of frames) {
+      
+      const fillNameSequentially = async (index: number): Promise<void> => {
+        if (index >= frames.length) return;
+        const frame = frames[index];
         if (!nameFilled) nameFilled = await fillInFrame(frame, nameSelectors, name);
-      }
+        await fillNameSequentially(index + 1);
+      };
+      await fillNameSequentially(0);
 
       console.log(`Stripe autofill summary: Card=${cardFilled}, Expiry=${expiryFilled}, CVC=${cvcFilled}, Name=${nameFilled}`);
       return cardFilled && expiryFilled && cvcFilled;

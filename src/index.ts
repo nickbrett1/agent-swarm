@@ -218,6 +218,8 @@ Guidelines:
    * Queries either the Gemini API (if key is present) or falls back to Workers AI.
    */
   private async queryLLM(prompt: string): Promise<LLMResponse> {
+    let geminiError: any = null;
+
     if (this.env.GOOGLE_API_KEY) {
       const maxRetries = 3;
       for (let attempt = 1; attempt <= maxRetries; attempt++) {
@@ -256,6 +258,7 @@ Guidelines:
 
           return JSON.parse(textResponse.trim()) as LLMResponse;
         } catch (err: any) {
+          geminiError = err;
           console.warn(`Gemini API call attempt ${attempt} failed:`, err.message || err);
           if (attempt === maxRetries) {
             console.error("Gemini API call failed after max retries, falling back to Workers AI:", err);
@@ -269,36 +272,47 @@ Guidelines:
 
     // Fallback: Workers AI
     if (!this.env.AI) {
+      if (geminiError) {
+        throw geminiError;
+      }
       throw new Error("No LLM keys or Workers AI binding available");
     }
 
     console.log("Calling Workers AI Llama model...");
     const model = "@cf/meta/llama-3-8b-instruct";
-    const response = await this.env.AI.run(model, {
-      messages: [
-        { role: "system", content: "You are a helpful web assistant. You MUST respond with strict raw JSON matching the requested schema. No markdown formatting." },
-        { role: "user", content: prompt }
-      ]
-    });
-
-    const textResponse = response.response || response.text;
-    if (!textResponse) {
-      throw new Error("Empty response from Workers AI");
-    }
-
-    // Clean markdown blocks if LLM ignored instructions
-    let cleanText = textResponse.trim();
-    if (cleanText.startsWith("```json")) {
-      cleanText = cleanText.substring(7, cleanText.length - 3).trim();
-    } else if (cleanText.startsWith("```")) {
-      cleanText = cleanText.substring(3, cleanText.length - 3).trim();
-    }
-
+    
     try {
-      return JSON.parse(cleanText) as LLMResponse;
-    } catch (parseErr) {
-      console.error("Failed to parse LLM response as JSON. Raw response was:", textResponse);
-      throw new Error(`LLM output parsing error: ${parseErr}`);
+      const response = await this.env.AI.run(model, {
+        messages: [
+          { role: "system", content: "You are a helpful web assistant. You MUST respond with strict raw JSON matching the requested schema. No markdown formatting." },
+          { role: "user", content: prompt }
+        ]
+      });
+
+      const textResponse = response.response || response.text;
+      if (!textResponse) {
+        throw new Error("Empty response from Workers AI");
+      }
+
+      // Clean markdown blocks if LLM ignored instructions
+      let cleanText = textResponse.trim();
+      if (cleanText.startsWith("```json")) {
+        cleanText = cleanText.substring(7, cleanText.length - 3).trim();
+      } else if (cleanText.startsWith("```")) {
+        cleanText = cleanText.substring(3, cleanText.length - 3).trim();
+      }
+
+      try {
+        return JSON.parse(cleanText) as LLMResponse;
+      } catch (parseErr) {
+        console.error("Failed to parse LLM response as JSON. Raw response was:", textResponse);
+        throw new Error(`LLM output parsing error: ${parseErr}`);
+      }
+    } catch (err: any) {
+      if (geminiError) {
+        throw new Error(`Workers AI fallback failed: ${err.message || err}. (Gemini API also failed: ${geminiError.message || geminiError})`);
+      }
+      throw err;
     }
   }
 }
