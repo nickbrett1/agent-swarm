@@ -9,12 +9,12 @@
     "config": "./scripts/setup-wrangler-config.sh"
   },
   "dependencies": {
-    "agents": "latest",
-    "@cloudflare/puppeteer": "latest"
+    "agents": "0.13.3",
+    "@cloudflare/puppeteer": "1.1.0"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "latest",
+    "@cloudflare/workers-types": "4.20260531.1",
     "typescript": "^5.4.5",
-    "wrangler": "latest"
+    "wrangler": "4.95.0"
   }
 }
