@@ -197,11 +197,8 @@ export class PuppeteerBrowserHelper {
     this.elementsMap.clear();
     const elements: InteractiveElement[] = [];
 
-    // Ensure elementsData is defined to prevent typescript possibly undefined error
-    const safeElementsData = elementsData || [];
-
     // Assign clean sequential IDs and update our mapping map
-    safeElementsData.forEach((el, index) => {
+    elementsData.forEach((el, index) => {
       const id = `${el.tag}_${index}`;
       this.elementsMap.set(id, el.xpath);
       elements.push({
