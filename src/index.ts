@@ -31,6 +31,63 @@ export class ShopperAgent extends Agent<Env, ShopperState> {
   };
 
   /**
+   * Validates a URL to prevent SSRF by blocking local/private IP addresses and domains.
+   */
+  private isSafeUrl(urlStr: string): boolean {
+    try {
+      const urlObj = new URL(urlStr);
+
+      // Only allow http and https protocols
+      if (urlObj.protocol !== 'http:' && urlObj.protocol !== 'https:') {
+        return false;
+      }
+
+      const hostname = urlObj.hostname;
+
+      // Block localhost and local/internal domains
+      if (hostname === 'localhost' || hostname.endsWith('.local') || hostname.endsWith('.internal')) {
+        return false;
+      }
+
+      // Check IPv4 addresses (new URL() normalizes octal/hex/decimal IPs to standard dot-decimal notation)
+      const ipv4Regex = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/;
+      const match = hostname.match(ipv4Regex);
+      if (match) {
+        const octet1 = parseInt(match[1], 10);
+        const octet2 = parseInt(match[2], 10);
+
+        // 127.x.x.x (Loopback)
+        if (octet1 === 127) return false;
+        // 10.x.x.x (Private)
+        if (octet1 === 10) return false;
+        // 172.16.x.x - 172.31.x.x (Private)
+        if (octet1 === 172 && octet2 >= 16 && octet2 <= 31) return false;
+        // 192.168.x.x (Private)
+        if (octet1 === 192 && octet2 === 168) return false;
+        // 169.254.x.x (Link-local / AWS metadata)
+        if (octet1 === 169 && octet2 === 254) return false;
+        // 0.x.x.x (Current network)
+        if (octet1 === 0) return false;
+      }
+
+      // Block common IPv6 local/private addresses
+      if (hostname.includes('[') && hostname.includes(']')) {
+        const ipv6 = hostname.replace('[', '').replace(']', '').toLowerCase();
+        if (ipv6 === '::1' || ipv6 === '0:0:0:0:0:0:0:1') return false;
+        // Unique Local Addresses (fc00::/7)
+        if (ipv6.startsWith('fc') || ipv6.startsWith('fd')) return false;
+        // Link-local (fe80::/10)
+        if (ipv6.startsWith('fe8') || ipv6.startsWith('fe9') || ipv6.startsWith('fea') || ipv6.startsWith('feb')) return false;
+      }
+
+      return true;
+    } catch (err) {
+      // If URL parsing fails, it's malformed and potentially unsafe
+      return false;
+    }
+  }
+
+  /**
    * RPC Endpoint to trigger a shopping run.
    */
   @callable()
@@ -43,6 +100,17 @@ export class ShopperAgent extends Agent<Env, ShopperState> {
     });
 
     const targetUrl = url || this.env.SHOP_URL || "https://fintechnick.com/shop";
+
+    if (!this.isSafeUrl(targetUrl)) {
+      const errorMsg = `Invalid or unsafe URL provided: ${targetUrl}`;
+      this.setState({
+        ...this.state,
+        status: "failed",
+        lastError: errorMsg
+      });
+      return `Shopping Session Failed: ${errorMsg}`;
+    }
+
     const helper = new PuppeteerBrowserHelper(this.env.MYBROWSER);
     
     try {
