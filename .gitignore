@@ -18,7 +18,13 @@ vite.config.ts.timestamp-*
 .DS_Store
 Thumbs.db
 
+# Antigravity
+.antigravitycli
+
 # Optional
+
+# Cloudflare Wrangler
+.wrangler
 wrangler.jsonc
 
 # Python
@@ -45,6 +51,3 @@ venv/
 *.tar.gz
 *.rar
 target/
-
-.antigravitycli
-.wrangler

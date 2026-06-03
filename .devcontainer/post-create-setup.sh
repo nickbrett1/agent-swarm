@@ -7,15 +7,6 @@
 CURRENT_USER=$(whoami)
 USER_HOME_DIR="$HOME"
 
-
-echo "INFO: Creating Oh My Zsh custom directories..."
-mkdir -p "$USER_HOME_DIR/.oh-my-zsh/custom/themes" "$USER_HOME_DIR/.oh-my-zsh/custom/plugins"
-
-echo "INFO: Initializing Antigravity CLI global settings..."
-mkdir -p "$USER_HOME_DIR/.agy"
-printf '{\n  "selectedAuthType": "oauth-personal",\n  "general": {\n    "sessionRetention": {\n      "enabled": true,\n      "maxAge": "30d",\n      "warningAcknowledged": true\n    }\n  },\n  "ide": {\n    "hasSeenNudge": true,\n    "enabled": true\n  }\n}\n' > "$USER_HOME_DIR/.agy/settings.json"
-sudo chown -R "$CURRENT_USER:$CURRENT_USER" "$USER_HOME_DIR/.agy"
-
 echo "INFO: Ensuring wrangler directory permissions..."
 mkdir -p "$USER_HOME_DIR/.wrangler"
 sudo chown -R "$CURRENT_USER:$CURRENT_USER" "$USER_HOME_DIR/.wrangler"
@@ -23,6 +14,10 @@ sudo chown -R "$CURRENT_USER:$CURRENT_USER" "$USER_HOME_DIR/.wrangler"
 echo "INFO: Ensuring doppler directory permissions..."
 mkdir -p "$USER_HOME_DIR/.doppler"
 sudo chown -R "$CURRENT_USER:$CURRENT_USER" "$USER_HOME_DIR/.doppler"
+
+
+echo "INFO: Creating Oh My Zsh custom directories..."
+mkdir -p "$USER_HOME_DIR/.oh-my-zsh/custom/themes" "$USER_HOME_DIR/.oh-my-zsh/custom/plugins"
 
 if [ -f "/workspaces/agent-swarm/.devcontainer/.zshrc" ]; then
     echo "INFO: Copying .zshrc to $USER_HOME_DIR/.zshrc"
@@ -39,7 +34,6 @@ if [ -f "/workspaces/agent-swarm/.devcontainer/.p10k.zsh" ]; then
 else
     echo "INFO: /workspaces/agent-swarm/.devcontainer/.p10k.zsh not found, skipping copy."
 fi
-
 
 echo "INFO: Installing uv tool..."
 curl -LsSf https://astral.sh/uv/install.sh | sudo env CARGO_HOME=/usr/local UV_INSTALL_DIR=/usr/local/bin sh
@@ -65,17 +59,14 @@ sudo npm install -g @specifyapp/cli
 curl -fsSL https://antigravity.google/cli/install.sh | bash
 echo "INFO: Antigravity CLI and Specify CLI installation complete."
 
+echo "INFO: Initializing Antigravity CLI global settings..."
+mkdir -p "$USER_HOME_DIR/.agy"
+printf '{\n  "selectedAuthType": "oauth-personal",\n  "general": {\n    "sessionRetention": {\n      "enabled": true,\n      "maxAge": "30d",\n      "warningAcknowledged": true\n    }\n  },\n  "ide": {\n    "hasSeenNudge": true,\n    "enabled": true\n  }\n}\n' > "$USER_HOME_DIR/.agy/settings.json"
+sudo chown -R "$CURRENT_USER:$CURRENT_USER" "$USER_HOME_DIR/.agy"
+
 echo "Setup bridget to access Chrome DevTools Protocol over a secure tunnel..."
 socat TCP-LISTEN:9222,fork,bind=127.0.0.1 TCP:host.docker.internal:9222 &
 
-echo "INFO: Creating mock xdg-open to prevent wrangler remote browser hangs..."
-sudo tee /usr/local/bin/xdg-open << 'EOF'
-#!/bin/bash
-echo "Mock xdg-open called with: $@"
-exit 0
-EOF
-sudo chmod +x /usr/local/bin/xdg-open
-
-echo "INFO: Custom container setup script finished."
-echo "\n⚠️  To complete cloud login, run:"
-echo "    bash scripts/cloud-login.sh"
+echo -e "\nINFO: Custom container setup script finished."
+echo -e "\n⚠️  To complete cloud login, run:"
+echo "    cd /workspaces/agent-swarm && bash scripts/cloud_login.sh"
