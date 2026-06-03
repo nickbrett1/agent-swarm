@@ -75,3 +75,7 @@ echo "Mock xdg-open called with: $@"
 exit 0
 EOF
 sudo chmod +x /usr/local/bin/xdg-open
+
+echo "INFO: Custom container setup script finished."
+echo "\n⚠️  To complete cloud login, run:"
+echo "    bash scripts/cloud-login.sh"
