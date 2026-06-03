@@ -1,4 +1,4 @@
-import puppeteer, { Browser, Page, Frame } from "@cloudflare/puppeteer";
+import puppeteer, { Browser, Page, Frame, BrowserWorker } from "@cloudflare/puppeteer";
 
 export interface InteractiveElement {
   id: string;
@@ -16,7 +16,7 @@ export class PuppeteerBrowserHelper {
   private page: Page | null = null;
   private elementsMap: Map<string, string> = new Map(); // id -> xpath
 
-  constructor(private browserBinding: any) {}
+  constructor(private browserBinding: BrowserWorker) {}
 
   async init(): Promise<void> {
     console.log("Launching Cloudflare Browser Rendering session...");

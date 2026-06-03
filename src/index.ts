@@ -1,9 +1,11 @@
 import { Agent, routeAgentRequest, callable } from "agents";
 import { PuppeteerBrowserHelper } from "./browser.js";
+import type { BrowserWorker } from "@cloudflare/puppeteer";
+import type { Ai } from "@cloudflare/workers-types";
 
 export interface Env {
-  MYBROWSER: any;
-  AI: any;
+  MYBROWSER: BrowserWorker;
+  AI: Ai;
   GOOGLE_API_KEY?: string;
   SHOP_URL?: string;
 }
@@ -235,15 +237,15 @@ export class ShopperAgent extends Agent<Env, ShopperState> {
       await helper.close();
       return `Shopping Session Finished. Status: ${this.state.status}. Summary: ${outcomeSummary}`;
 
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Error during shopping execution:", err);
       this.setState({
         ...this.state,
         status: "failed",
-        lastError: err.message
+        lastError: err instanceof Error ? err.message : String(err)
       });
       await helper.close();
-      return `Shopping Session Failed: ${err.message}`;
+      return `Shopping Session Failed: ${err instanceof Error ? err.message : String(err)}`;
     }
   }
 
@@ -286,7 +288,7 @@ Guidelines:
    * Queries either the Gemini API (if key is present) or falls back to Workers AI.
    */
   private async queryLLM(prompt: string): Promise<LLMResponse> {
-    let geminiError: any = null;
+    let geminiError: unknown = null;
 
     if (this.env.GOOGLE_API_KEY) {
       const maxRetries = 3;
@@ -318,16 +320,16 @@ Guidelines:
             throw new Error(`Gemini API returned status ${response.status}: ${await response.text()}`);
           }
 
-          const data: any = await response.json();
+          const data = await response.json() as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> };
           const textResponse = data.candidates?.[0]?.content?.parts?.[0]?.text;
           if (!textResponse) {
             throw new Error("Empty response from Gemini API");
           }
 
           return JSON.parse(textResponse.trim()) as LLMResponse;
-        } catch (err: any) {
+        } catch (err: unknown) {
           geminiError = err;
-          console.warn(`Gemini API call attempt ${attempt} failed:`, err.message || err);
+          console.warn(`Gemini API call attempt ${attempt} failed:`, err instanceof Error ? err.message : String(err));
           if (attempt === maxRetries) {
             console.error("Gemini API call failed after max retries, falling back to Workers AI:", err);
           } else {
@@ -357,7 +359,7 @@ Guidelines:
         ]
       });
 
-      const textResponse = response.response || response.text;
+      const textResponse = response.response || (response as { text?: string }).text;
       if (!textResponse) {
         throw new Error("Empty response from Workers AI");
       }
@@ -376,9 +378,11 @@ Guidelines:
         console.error("Failed to parse LLM response as JSON. Raw response was:", textResponse);
         throw new Error(`LLM output parsing error: ${parseErr}`);
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       if (geminiError) {
-        throw new Error(`Workers AI fallback failed: ${err.message || err}. (Gemini API also failed: ${geminiError.message || geminiError})`);
+        const errMessage = err instanceof Error ? err.message : String(err);
+        const geminiMessage = geminiError instanceof Error ? geminiError.message : String(geminiError);
+        throw new Error(`Workers AI fallback failed: ${errMessage}. (Gemini API also failed: ${geminiMessage})`);
       }
       throw err;
     }
