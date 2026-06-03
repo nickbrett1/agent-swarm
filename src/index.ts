@@ -318,7 +318,7 @@ Guidelines:
 }
 
 export default {
-  async fetch(request: Request, env: Env, ctx: ExecutionContext) {
+  async fetch(request: Request, env: Env) {
     // Route RPC and WebSocket connection requests to appropriate Durable Object agents
     return (
       (await routeAgentRequest(request, env)) ??
