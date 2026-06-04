@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { PuppeteerBrowserHelper } from './browser.ts';
+import { PuppeteerBrowserHelper } from './browser.js';
 import puppeteer from '@cloudflare/puppeteer';
 
 vi.mock('@cloudflare/puppeteer', () => ({
@@ -14,6 +14,7 @@ describe('PuppeteerBrowserHelper', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    // @ts-ignore - Mocking BrowserWorker is complex and this mock is enough for the tests
     helper = new PuppeteerBrowserHelper(mockBrowserBinding);
   });
 

@@ -205,10 +205,15 @@ export class ShopperAgent extends Agent<Env, ShopperState> {
 
           case "stripe_fill":
             // Automate Stripe iframe using test credentials from worker config or defaults
-            const card = this.env.STRIPE_TEST_CARD || "4242 4242 4242 4242";
-            const expiry = this.env.STRIPE_TEST_EXPIRY || "12/28";
-            const cvc = this.env.STRIPE_TEST_CVC || "123";
-            const name = this.env.STRIPE_TEST_NAME || "Agent Shopper";
+            const card = this.env.STRIPE_TEST_CARD;
+            const expiry = this.env.STRIPE_TEST_EXPIRY;
+            const cvc = this.env.STRIPE_TEST_CVC;
+            const name = this.env.STRIPE_TEST_NAME;
+
+            if (!card || !expiry || !cvc || !name) {
+              throw new Error("Missing required Stripe test credentials in environment configuration.");
+            }
+
             console.log("Filling Stripe checkout details...");
             const stripeOk = await helper.handleStripeIframe(card, expiry, cvc, name);
             if (stripeOk) {
