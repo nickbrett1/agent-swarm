@@ -134,9 +134,10 @@ export class ShopperAgent extends Agent<Env, ShopperState> {
         
         // Check if the current URL is a success/thank-you/complete page
         const currentUrl = await helper.getPageUrl();
-        if (currentUrl.toLowerCase().includes("success") || 
-            currentUrl.toLowerCase().includes("thank") || 
-            currentUrl.toLowerCase().includes("complete")) {
+        const lowerUrl = currentUrl.toLowerCase();
+        if (lowerUrl.includes("success") ||
+            lowerUrl.includes("thank") ||
+            lowerUrl.includes("complete")) {
           console.log(`Success page detected: ${currentUrl}. Finishing shopping run.`);
           finished = true;
           outcomeSummary = `Successfully completed purchase. Redirected to: ${currentUrl}`;
