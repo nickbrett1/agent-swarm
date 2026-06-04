@@ -154,9 +154,15 @@ export class ShopperAgent extends Agent<Env, ShopperState> {
 
         // 3. Query LLM (Gemini or Workers AI)
         const decision = await this.queryLLM(prompt);
-        console.log("LLM Decision:", JSON.stringify(decision, null, 2));
 
-        const actionLog = `Step ${step}: ${decision.explanation} -> Action: ${decision.action}${decision.targetId ? ' on ' + decision.targetId : ''}${decision.text ? ' value="' + decision.text + '"' : ''}`;
+        // Filter sensitive data before logging
+        const logDecision = { ...decision };
+        if (logDecision.text) {
+          logDecision.text = "***REDACTED***";
+        }
+        console.log("LLM Decision:", JSON.stringify(logDecision, null, 2));
+
+        const actionLog = `Step ${step}: ${decision.explanation} -> Action: ${decision.action}${decision.targetId ? ' on ' + decision.targetId : ''}${decision.text ? ' value="***REDACTED***"' : ''}`;
         this.setState({
           ...this.state,
           history: [...this.state.history, actionLog]
