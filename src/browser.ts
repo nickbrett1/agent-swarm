@@ -359,27 +359,31 @@ export class PuppeteerBrowserHelper {
         return false;
       }
 
-      // Try main page and then frames sequentially to avoid await in loops rule
-      const fillFramesSequentially = async (index: number): Promise<void> => {
-        if (index >= frames.length) return;
-        const frame = frames[index];
-        if (!cardFilled) cardFilled = await fillInFrame(frame, STRIPE_CARD_SELECTORS, card);
-        if (!expiryFilled) expiryFilled = await fillInFrame(frame, STRIPE_EXPIRY_SELECTORS, expiry);
-        if (!cvcFilled) cvcFilled = await fillInFrame(frame, STRIPE_CVC_SELECTORS, cvc);
-        await fillFramesSequentially(index + 1);
-      };
-      await fillFramesSequentially(0);
+      // Try main page and then frames concurrently
+      await Promise.all(frames.map(async (frame) => {
+        if (!cardFilled) {
+          const filled = await fillInFrame(frame, STRIPE_CARD_SELECTORS, card);
+          if (filled) cardFilled = true;
+        }
+        if (!expiryFilled) {
+          const filled = await fillInFrame(frame, STRIPE_EXPIRY_SELECTORS, expiry);
+          if (filled) expiryFilled = true;
+        }
+        if (!cvcFilled) {
+          const filled = await fillInFrame(frame, STRIPE_CVC_SELECTORS, cvc);
+          if (filled) cvcFilled = true;
+        }
+      }));
 
-      // Fill name on card if present in main page or frame
+      // Fill name on card if present in main page or frame concurrently
       let nameFilled = false;
       
-      const fillNameSequentially = async (index: number): Promise<void> => {
-        if (index >= frames.length) return;
-        const frame = frames[index];
-        if (!nameFilled) nameFilled = await fillInFrame(frame, STRIPE_NAME_SELECTORS, name);
-        await fillNameSequentially(index + 1);
-      };
-      await fillNameSequentially(0);
+      await Promise.all(frames.map(async (frame) => {
+        if (!nameFilled) {
+          const filled = await fillInFrame(frame, STRIPE_NAME_SELECTORS, name);
+          if (filled) nameFilled = true;
+        }
+      }));
 
       console.log(`Stripe autofill summary: Card=${cardFilled}, Expiry=${expiryFilled}, CVC=${cvcFilled}, Name=${nameFilled}`);
       return cardFilled && expiryFilled && cvcFilled;
