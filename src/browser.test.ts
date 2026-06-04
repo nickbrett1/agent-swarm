@@ -296,6 +296,39 @@ describe('PuppeteerBrowserHelper', () => {
     expect(result).toBe(false);
   });
 
+  it('should handle errors in typeElement and return false', async () => {
+    const mockEvaluate = vi.fn().mockResolvedValue([
+      { tag: 'input', type: 'text', text: '', placeholder: '', name: '', role: '', xpath: '//input' }
+    ]);
+    const mockUrl = vi.fn().mockReturnValue('http://example.com');
+    const mockType = vi.fn().mockRejectedValue(new Error('Typing failed'));
+    const mockClick = vi.fn();
+    const mockScrollIntoView = vi.fn();
+    const mockPress = vi.fn();
+    const mockPage = {
+      setViewport: vi.fn(),
+      setDefaultTimeout: vi.fn(),
+      evaluate: mockEvaluate,
+      url: mockUrl,
+      $$: vi.fn().mockResolvedValue([{ scrollIntoView: mockScrollIntoView, click: mockClick, type: mockType }]),
+      keyboard: { press: mockPress }
+    };
+    const mockBrowser = {
+      newPage: vi.fn().mockResolvedValue(mockPage),
+    };
+    (puppeteer.launch as any).mockResolvedValue(mockBrowser);
+
+    await helper.init();
+    await helper.getInteractiveElements(); // Populate elementsMap
+
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const result = await helper.typeElement('input_0', 'test value');
+
+    expect(result).toBe(false);
+    expect(consoleSpy).toHaveBeenCalledWith('Error typing into element input_0:', expect.any(Error));
+    consoleSpy.mockRestore();
+  });
+
   it('should throw error on typeElement if not initialized', async () => {
     await expect(helper.typeElement('some_id', 'test')).rejects.toThrow('Browser not initialized');
   });
@@ -313,7 +346,15 @@ describe('PuppeteerBrowserHelper', () => {
         if (selector === 'input#cardNumber' || selector === 'input#cardExpiry' || selector === 'input#cardCvc' || selector === 'input#billingName') {
            return Promise.resolve({
              scrollIntoView: vi.fn(),
-             evaluate: vi.fn()
+             evaluate: vi.fn().mockImplementation((fn, value) => {
+               // Simulate the evaluate block execution
+               const mockElement = {
+                 value: '',
+                 dispatchEvent: vi.fn()
+               };
+               // The evaluate function is passed dynamically, we call it to ensure it executes
+               fn(mockElement, value);
+             })
            });
         }
         return Promise.resolve(null);
@@ -355,6 +396,29 @@ describe('PuppeteerBrowserHelper', () => {
 
   it('should throw error on handleStripeIframe if not initialized', async () => {
     await expect(helper.handleStripeIframe('4242', '12/28', '123', 'Test')).rejects.toThrow('Browser not initialized');
+  });
+
+  it('should handle exception during stripe iframe handling', async () => {
+    const mockPage = {
+      setViewport: vi.fn(),
+      setDefaultTimeout: vi.fn(),
+      frames: vi.fn().mockImplementation(() => {
+        throw new Error('Frames error');
+      }),
+    };
+    const mockBrowser = {
+      newPage: vi.fn().mockResolvedValue(mockPage),
+    };
+    (puppeteer.launch as any).mockResolvedValue(mockBrowser);
+
+    await helper.init();
+
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const result = await helper.handleStripeIframe('4242', '12/28', '123', 'Test User');
+
+    expect(result).toBe(false);
+    expect(consoleSpy).toHaveBeenCalledWith('Exception during Stripe iframe handling:', expect.any(Error));
+    consoleSpy.mockRestore();
   });
 
   it('should handle evaluation click fallback', async () => {
