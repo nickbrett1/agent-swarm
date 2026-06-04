@@ -417,6 +417,38 @@ describe('PuppeteerBrowserHelper', () => {
     await expect(helper.handleStripeIframe('4242', '12/28', '123', 'Test')).rejects.toThrow('Browser not initialized');
   });
 
+  it('should handle evaluation click fallback when node is null', async () => {
+    const mockUrl = vi.fn().mockReturnValue('http://example.com');
+
+    // Mock global objects for the page.evaluate fallback function
+    const originalDocument = global.document;
+    const originalXPathResult = global.XPathResult;
+
+    global.document = {
+      evaluate: vi.fn().mockReturnValue({
+        singleNodeValue: null
+      })
+    } as any;
+
+    global.XPathResult = {
+      FIRST_ORDERED_NODE_TYPE: 9
+    } as any;
+
+    // Mock $$ returning empty array to trigger fallback
+    const mockPage = {
+      setViewport: vi.fn(),
+      setDefaultTimeout: vi.fn(),
+      evaluate: vi.fn().mockImplementation((fn, ...args) => {
+         if (args.length === 0) {
+            // GetInteractiveElements eval
+            return [{ tag: 'button', type: '', text: 'Submit', placeholder: '', name: '', role: '', xpath: '//button' }];
+         } else {
+            // click fallback eval - execute the actual fallback function
+            return fn(...args);
+         }
+      }),
+      url: mockUrl,
+      $$: vi.fn().mockResolvedValue([])
   it('should handle exception during stripe iframe handling', async () => {
     const mockPage = {
       setViewport: vi.fn(),
@@ -431,6 +463,16 @@ describe('PuppeteerBrowserHelper', () => {
     (puppeteer.launch as any).mockResolvedValue(mockBrowser);
 
     await helper.init();
+    await helper.getInteractiveElements(); // Populate elementsMap
+    const result = await helper.clickElement('button_0');
+
+    expect(mockPage.evaluate).toHaveBeenCalledTimes(2); // once for elements, once for fallback click
+    expect(result).toBe(false);
+    expect(global.document.evaluate).toHaveBeenCalledWith('//button', global.document, null, 9, null);
+
+    // Cleanup globals
+    global.document = originalDocument;
+    global.XPathResult = originalXPathResult;
 
     const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const result = await helper.handleStripeIframe('4242', '12/28', '123', 'Test User');
@@ -441,10 +483,28 @@ describe('PuppeteerBrowserHelper', () => {
   });
 
   it('should handle evaluation click fallback', async () => {
-    const mockEvaluate = vi.fn().mockResolvedValue([
-      { tag: 'button', type: '', text: 'Submit', placeholder: '', name: '', role: '', xpath: '//button' }
-    ]);
     const mockUrl = vi.fn().mockReturnValue('http://example.com');
+
+    // Mock global objects for the page.evaluate fallback function
+    const originalDocument = global.document;
+    const originalXPathResult = global.XPathResult;
+
+    const mockScrollIntoView = vi.fn();
+    const mockClick = vi.fn();
+
+    global.document = {
+      evaluate: vi.fn().mockReturnValue({
+        singleNodeValue: {
+          scrollIntoView: mockScrollIntoView,
+          click: mockClick
+        }
+      })
+    } as any;
+
+    global.XPathResult = {
+      FIRST_ORDERED_NODE_TYPE: 9
+    } as any;
+
     // Mock $$ returning empty array to trigger fallback
     const mockPage = {
       setViewport: vi.fn(),
@@ -454,8 +514,8 @@ describe('PuppeteerBrowserHelper', () => {
             // GetInteractiveElements eval
             return [{ tag: 'button', type: '', text: 'Submit', placeholder: '', name: '', role: '', xpath: '//button' }];
          } else {
-            // click fallback eval
-            return true;
+            // click fallback eval - execute the actual fallback function
+            return fn(...args);
          }
       }),
       url: mockUrl,
@@ -472,6 +532,13 @@ describe('PuppeteerBrowserHelper', () => {
 
     expect(mockPage.evaluate).toHaveBeenCalledTimes(2); // once for elements, once for fallback click
     expect(result).toBe(true);
+    expect(global.document.evaluate).toHaveBeenCalledWith('//button', global.document, null, 9, null);
+    expect(mockScrollIntoView).toHaveBeenCalledWith({ block: 'center' });
+    expect(mockClick).toHaveBeenCalled();
+
+    // Cleanup globals
+    global.document = originalDocument;
+    global.XPathResult = originalXPathResult;
   });
 
 });
