@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { PuppeteerBrowserHelper } from './browser.ts';
+import { PuppeteerBrowserHelper } from './browser';
 import puppeteer from '@cloudflare/puppeteer';
 
 vi.mock('@cloudflare/puppeteer', () => ({
@@ -10,7 +10,7 @@ vi.mock('@cloudflare/puppeteer', () => ({
 
 describe('PuppeteerBrowserHelper', () => {
   let helper: PuppeteerBrowserHelper;
-  const mockBrowserBinding = {};
+  const mockBrowserBinding = {} as any;
 
   beforeEach(() => {
     vi.clearAllMocks();

@@ -150,10 +150,10 @@ export class ShopperAgent extends Agent<Env, ShopperState> {
         console.log(`Interactive nodes count: ${pageData.elements.length}`);
 
         // 2. Build the LLM prompt
-        const prompt = this.buildLLMPrompt(persona, pageData.textSummary, this.state.history);
+        const { systemPrompt, userPrompt } = this.buildLLMPrompt(persona, pageData.textSummary, this.state.history);
 
         // 3. Query LLM (Gemini or Workers AI)
-        const decision = await this.queryLLM(prompt);
+        const decision = await this.queryLLM(systemPrompt, userPrompt);
         console.log("LLM Decision:", JSON.stringify(decision, null, 2));
 
         const actionLog = `Step ${step}: ${decision.explanation} -> Action: ${decision.action}${decision.targetId ? ' on ' + decision.targetId : ''}${decision.text ? ' value="' + decision.text + '"' : ''}`;
@@ -258,20 +258,9 @@ export class ShopperAgent extends Agent<Env, ShopperState> {
   /**
    * Constructs a strict prompt for the LLM.
    */
-  private buildLLMPrompt(persona: string, textSummary: string, history: string[]): string {
-    return `
-You are an autonomous e-commerce shopper agent executing inside a browser.
-Your persona configuration: ${persona}
-
-Your goal: Find a product that fits your persona, add it to the cart/buy it, and proceed through checkout using Stripe's test mode.
-
-Here is the history of actions you have taken so far in this session:
-${history.length > 0 ? history.map((h, i) => `${i+1}. ${h}`).join("\n") : "No actions taken yet."}
-
-Here is the current state of the page:
----------------------------------------------
-${textSummary}
----------------------------------------------
+  private buildLLMPrompt(persona: string, textSummary: string, history: string[]): { systemPrompt: string, userPrompt: string } {
+    const systemPrompt = `You are an autonomous e-commerce shopper agent executing inside a browser.
+Your goal: Find a product that fits the user's persona, add it to the cart/buy it, and proceed through checkout using Stripe's test mode.
 
 Decide the single next action to take. You must output a JSON object matching this schema:
 {
@@ -283,17 +272,28 @@ Decide the single next action to take. You must output a JSON object matching th
 
 Guidelines:
 1. Review the element IDs closely. Choose the ID that best aligns with your next step.
-2. If you are looking at a product catalog, click the "Buy Now" or "Add to Cart" button for a product matching your persona.
+2. If you are looking at a product catalog, click the "Buy Now" or "Add to Cart" button for a product matching the persona.
 3. If you are on the Checkout page and see Credit Card, Expiration, or CVC inputs, use the "stripe_fill" action (which will autofill these inputs inside the iframe).
 4. If you have submitted the payment and see a Success or Thank You page, output the "finish" action with a final success summary.
-5. RESPOND WITH A RAW JSON OBJECT ONLY. DO NOT WRAP IT IN MARKDOWN CODE BLOCKS OR EXTRA TEXT.
-`;
+5. RESPOND WITH A RAW JSON OBJECT ONLY. DO NOT WRAP IT IN MARKDOWN CODE BLOCKS OR EXTRA TEXT.`;
+
+    const userPrompt = `Your persona configuration: ${persona}
+
+Here is the history of actions you have taken so far in this session:
+${history.length > 0 ? history.map((h, i) => `${i+1}. ${h}`).join("\n") : "No actions taken yet."}
+
+Here is the current state of the page:
+---------------------------------------------
+${textSummary}
+---------------------------------------------`;
+
+    return { systemPrompt, userPrompt };
   }
 
   /**
    * Queries either the Gemini API (if key is present) or falls back to Workers AI.
    */
-  private async queryLLM(prompt: string): Promise<LLMResponse> {
+  private async queryLLM(systemPrompt: string, userPrompt: string): Promise<LLMResponse> {
     let geminiError: unknown = null;
 
     if (this.env.GOOGLE_API_KEY) {
@@ -308,11 +308,18 @@ Guidelines:
               "x-goog-api-key": this.env.GOOGLE_API_KEY
             },
             body: JSON.stringify({
+              systemInstruction: {
+                parts: [
+                  {
+                    text: systemPrompt
+                  }
+                ]
+              },
               contents: [
                 {
                   parts: [
                     {
-                      text: prompt
+                      text: userPrompt
                     }
                   ]
                 }
@@ -361,8 +368,8 @@ Guidelines:
     try {
       const response = await this.env.AI.run(model, {
         messages: [
-          { role: "system", content: "You are a helpful web assistant. You MUST respond with strict raw JSON matching the requested schema. No markdown formatting." },
-          { role: "user", content: prompt }
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPrompt }
         ]
       });
 
