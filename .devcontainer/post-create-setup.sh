@@ -15,6 +15,9 @@ echo "INFO: Ensuring doppler directory permissions..."
 mkdir -p "$USER_HOME_DIR/.doppler"
 sudo chown -R "$CURRENT_USER:$CURRENT_USER" "$USER_HOME_DIR/.doppler"
 
+echo "INFO: Ensuring gemini directory permissions..."
+mkdir -p "$USER_HOME_DIR/.gemini"
+sudo chown -R "$CURRENT_USER:$CURRENT_USER" "$USER_HOME_DIR/.gemini"
 
 echo "INFO: Creating Oh My Zsh custom directories..."
 mkdir -p "$USER_HOME_DIR/.oh-my-zsh/custom/themes" "$USER_HOME_DIR/.oh-my-zsh/custom/plugins"
