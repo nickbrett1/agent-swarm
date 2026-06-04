@@ -40,3 +40,4 @@ wrangler.jsonc
 *.tar.gz
 *.rar
 target/
+coverage/

@@ -6,14 +6,17 @@
   "scripts": {
     "dev": "./scripts/run-wrangler-dev.sh",
     "deploy": "wrangler deploy",
-    "config": "./scripts/setup-wrangler-config.sh"
+    "config": "./scripts/setup-wrangler-config.sh",
+    "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
+    "@cloudflare/puppeteer": "latest",
     "agents": "latest",
-    "@cloudflare/puppeteer": "latest"
+    "vitest": "^4.1.8"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "latest",
+    "@vitest/coverage-v8": "^4.1.8",
     "typescript": "^5.4.5",
     "wrangler": "latest"
   }
