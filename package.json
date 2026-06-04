@@ -18,6 +18,6 @@
     "@cloudflare/workers-types": "latest",
     "@vitest/coverage-v8": "^4.1.8",
     "typescript": "^5.4.5",
-    "wrangler": "latest"
+    "wrangler": "4.95.0"
   }
 }

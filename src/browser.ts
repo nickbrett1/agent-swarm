@@ -1,4 +1,4 @@
-import puppeteer, { Browser, Page, Frame } from "@cloudflare/puppeteer";
+import puppeteer, { Browser, Page, Frame, BrowserWorker } from "@cloudflare/puppeteer";
 
 export interface InteractiveElement {
   id: string;
@@ -11,12 +11,18 @@ export interface InteractiveElement {
   xpath: string; // Used to locate the element dynamically
 }
 
+// Selectors for Stripe Checkout inputs inside iframe/page
+const STRIPE_CARD_SELECTORS = ['input#cardNumber', 'input[name="cardnumber"]', 'input[placeholder*="1234"]', 'input[aria-label*="Card number"]'];
+const STRIPE_EXPIRY_SELECTORS = ['input#cardExpiry', 'input[name="exp-date"]', 'input[placeholder*="MM"]', 'input[aria-label*="Expiration"]'];
+const STRIPE_CVC_SELECTORS = ['input#cardCvc', 'input[name="cvc"]', 'input[placeholder*="CVC"]', 'input[aria-label*="CVC"]'];
+const STRIPE_NAME_SELECTORS = ['input#billingName', 'input[name="name"]', 'input[placeholder*="Name"]'];
+
 export class PuppeteerBrowserHelper {
   private browser: Browser | null = null;
   private page: Page | null = null;
   private elementsMap: Map<string, string> = new Map(); // id -> xpath
 
-  constructor(private browserBinding: any) {}
+  constructor(private browserBinding: BrowserWorker) {}
 
   async init(): Promise<void> {
     console.log("Launching Cloudflare Browser Rendering session...");
@@ -66,7 +72,7 @@ export class PuppeteerBrowserHelper {
       try {
         // We execute a script in the browser context to find and label interactive elements
         elementsData = await this.page.evaluate(() => {
-          const results: Array<{
+          interface ElementData {
             tag: string;
             type: string;
             text: string;
@@ -74,9 +80,8 @@ export class PuppeteerBrowserHelper {
             name: string;
             role: string;
             xpath: string;
-          }> = [];
+          }
 
-          // Helper to generate a simple XPath for an element
           function getXPath(element: Element): string {
             if (element.id) {
               return `//*[@id="${element.id}"]`;
@@ -113,44 +118,52 @@ export class PuppeteerBrowserHelper {
             return paths.length ? '/' + paths.join('/') : '';
           }
 
-          // Query standard interactive selectors
+          function isVisible(el: HTMLElement): boolean {
+            const rect = el.getBoundingClientRect();
+            if (rect.width === 0 || rect.height === 0) return false;
+            const style = window.getComputedStyle(el);
+            if (style.display === 'none' || style.visibility === 'hidden' || parseFloat(style.opacity) === 0) return false;
+            return true;
+          }
+
+          function isDisabled(el: HTMLElement): boolean {
+            if ((el as HTMLButtonElement | HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement).disabled) return true;
+            if (el.getAttribute('aria-disabled') === 'true') return true;
+            if (el.classList.contains('disabled')) return true;
+            return false;
+          }
+
+          function getCleanText(el: HTMLElement): string {
+            let text = (el.innerText || el.textContent || '').trim();
+            if (!text && el.tagName === 'INPUT') {
+              text = (el as HTMLInputElement).value || '';
+            }
+            if (text.length > 80) {
+              text = text.substring(0, 77) + "...";
+            }
+            return text;
+          }
+
+          function extractElementData(el: HTMLElement): ElementData {
+            return {
+              tag: el.tagName.toLowerCase(),
+              type: (el as HTMLInputElement).type || '',
+              text: getCleanText(el),
+              placeholder: (el as HTMLInputElement).placeholder || el.getAttribute('aria-label') || '',
+              name: el.getAttribute('name') || el.getAttribute('id') || '',
+              role: el.getAttribute('role') || '',
+              xpath: getXPath(el)
+            };
+          }
+
+          const results: ElementData[] = [];
           const selector = 'button, a, input, select, textarea, [role="button"], [onclick]';
           const nodes = Array.from(document.querySelectorAll(selector));
 
           nodes.forEach((node) => {
             const el = node as HTMLElement;
-            
-            // Skip hidden or tiny elements
-            const rect = el.getBoundingClientRect();
-            if (rect.width === 0 || rect.height === 0) return;
-            const style = window.getComputedStyle(el);
-            if (style.display === 'none' || style.visibility === 'hidden' || parseFloat(style.opacity) === 0) return;
-
-            // Skip disabled elements
-            if ((el as HTMLButtonElement | HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement).disabled) return;
-            if (el.getAttribute('aria-disabled') === 'true') return;
-            if (el.classList.contains('disabled')) return;
-
-            // Clean up innerText/text context
-            let text = (el.innerText || el.textContent || '').trim();
-            if (!text && el.tagName === 'INPUT') {
-              text = (el as HTMLInputElement).value || '';
-            }
-            
-            // Truncate overly long texts (e.g. nested containers)
-            if (text.length > 80) {
-              text = text.substring(0, 77) + "...";
-            }
-
-            results.push({
-              tag: el.tagName.toLowerCase(),
-              type: (el as HTMLInputElement).type || '',
-              text: text,
-              placeholder: (el as HTMLInputElement).placeholder || el.getAttribute('aria-label') || '',
-              name: el.getAttribute('name') || el.getAttribute('id') || '',
-              role: el.getAttribute('role') || '',
-              xpath: getXPath(el)
-            });
+            if (!isVisible(el) || isDisabled(el)) return;
+            results.push(extractElementData(el));
           });
 
           return results;
@@ -197,11 +210,8 @@ export class PuppeteerBrowserHelper {
     this.elementsMap.clear();
     const elements: InteractiveElement[] = [];
 
-    // Ensure elementsData is defined to prevent typescript possibly undefined error
-    const safeElementsData = elementsData || [];
-
     // Assign clean sequential IDs and update our mapping map
-    safeElementsData.forEach((el, index) => {
+    elementsData.forEach((el, index) => {
       const id = `${el.tag}_${index}`;
       this.elementsMap.set(id, el.xpath);
       elements.push({
@@ -235,29 +245,43 @@ export class PuppeteerBrowserHelper {
   }
 
   /**
-   * Clicks an element by its interactive ID.
+   * Helper method to look up an element by ID and fetch its Handle and XPath.
    */
-  async clickElement(id: string): Promise<boolean> {
+  private async findElement(id: string) {
     if (!this.page) throw new Error("Browser not initialized");
     const xpath = this.elementsMap.get(id);
     if (!xpath) {
       console.warn(`Element ID ${id} not found in map`);
-      return false;
+      return null;
     }
+    const elements = await this.page.$$(`xpath/${xpath}`);
+    return {
+      element: elements.length > 0 ? elements[0] : null,
+      xpath
+    };
+  }
+
+  /**
+   * Clicks an element by its interactive ID.
+   */
+  async clickElement(id: string): Promise<boolean> {
+    if (!this.page) throw new Error("Browser not initialized");
+    const result = await this.findElement(id);
+    if (!result) return false;
+
+    const { element, xpath } = result;
 
     console.log(`Clicking element: ${id} (XPath: ${xpath})`);
     try {
-      // Find element using xpath
-      const elements = await this.page.$$(`xpath/${xpath}`);
-      if (elements.length > 0) {
-        await elements[0].scrollIntoView();
-        await elements[0].click();
+      if (element) {
+        await element.scrollIntoView();
+        await element.click();
         return true;
       }
       // Fallback: evaluate click directly via JS
       const clicked = await this.page.evaluate((xp) => {
-        const result = document.evaluate(xp, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
-        const node = result.singleNodeValue as HTMLElement;
+        const res = document.evaluate(xp, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
+        const node = res.singleNodeValue as HTMLElement;
         if (node) {
           node.scrollIntoView({ block: 'center' });
           node.click();
@@ -277,21 +301,19 @@ export class PuppeteerBrowserHelper {
    */
   async typeElement(id: string, text: string): Promise<boolean> {
     if (!this.page) throw new Error("Browser not initialized");
-    const xpath = this.elementsMap.get(id);
-    if (!xpath) {
-      console.warn(`Element ID ${id} not found in map`);
-      return false;
-    }
+    const result = await this.findElement(id);
+    if (!result) return false;
+
+    const { element, xpath } = result;
 
     console.log(`Typing "${text}" into element: ${id}`);
     try {
-      const elements = await this.page.$$(`xpath/${xpath}`);
-      if (elements.length > 0) {
-        await elements[0].scrollIntoView();
+      if (element) {
+        await element.scrollIntoView();
         // Clear existing value if possible
-        await elements[0].click({ clickCount: 3 });
+        await element.click({ clickCount: 3 });
         await this.page.keyboard.press('Backspace');
-        await elements[0].type(text);
+        await element.type(text);
         return true;
       }
       return false;
@@ -315,11 +337,6 @@ export class PuppeteerBrowserHelper {
       let cardFilled = false;
       let expiryFilled = false;
       let cvcFilled = false;
-
-      // Selectors for card details inside iframe
-      const cardSelectors = ['input#cardNumber', 'input[name="cardnumber"]', 'input[placeholder*="1234"]', 'input[aria-label*="Card number"]'];
-      const expirySelectors = ['input#cardExpiry', 'input[name="exp-date"]', 'input[placeholder*="MM"]', 'input[aria-label*="Expiration"]'];
-      const cvcSelectors = ['input#cardCvc', 'input[name="cvc"]', 'input[placeholder*="CVC"]', 'input[aria-label*="CVC"]'];
 
       // Helper to fill a field in a frame
       async function fillInFrame(frame: Frame, selectors: string[], value: string): Promise<boolean> {
@@ -346,21 +363,20 @@ export class PuppeteerBrowserHelper {
       const fillFramesSequentially = async (index: number): Promise<void> => {
         if (index >= frames.length) return;
         const frame = frames[index];
-        if (!cardFilled) cardFilled = await fillInFrame(frame, cardSelectors, card);
-        if (!expiryFilled) expiryFilled = await fillInFrame(frame, expirySelectors, expiry);
-        if (!cvcFilled) cvcFilled = await fillInFrame(frame, cvcSelectors, cvc);
+        if (!cardFilled) cardFilled = await fillInFrame(frame, STRIPE_CARD_SELECTORS, card);
+        if (!expiryFilled) expiryFilled = await fillInFrame(frame, STRIPE_EXPIRY_SELECTORS, expiry);
+        if (!cvcFilled) cvcFilled = await fillInFrame(frame, STRIPE_CVC_SELECTORS, cvc);
         await fillFramesSequentially(index + 1);
       };
       await fillFramesSequentially(0);
 
       // Fill name on card if present in main page or frame
-      const nameSelectors = ['input#billingName', 'input[name="name"]', 'input[placeholder*="Name"]'];
       let nameFilled = false;
       
       const fillNameSequentially = async (index: number): Promise<void> => {
         if (index >= frames.length) return;
         const frame = frames[index];
-        if (!nameFilled) nameFilled = await fillInFrame(frame, nameSelectors, name);
+        if (!nameFilled) nameFilled = await fillInFrame(frame, STRIPE_NAME_SELECTORS, name);
         await fillNameSequentially(index + 1);
       };
       await fillNameSequentially(0);

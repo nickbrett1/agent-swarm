@@ -1,11 +1,17 @@
 import { Agent, routeAgentRequest, callable } from "agents";
 import { PuppeteerBrowserHelper } from "./browser.js";
+import type { BrowserWorker } from "@cloudflare/puppeteer";
+import type { Ai } from "@cloudflare/workers-types";
 
 export interface Env {
-  MYBROWSER: any;
-  AI: any;
+  MYBROWSER: BrowserWorker;
+  AI: Ai;
   GOOGLE_API_KEY?: string;
   SHOP_URL?: string;
+  STRIPE_TEST_CARD?: string;
+  STRIPE_TEST_EXPIRY?: string;
+  STRIPE_TEST_CVC?: string;
+  STRIPE_TEST_NAME?: string;
 }
 
 export interface ShopperState {
@@ -31,6 +37,63 @@ export class ShopperAgent extends Agent<Env, ShopperState> {
   };
 
   /**
+   * Validates a URL to prevent SSRF by blocking local/private IP addresses and domains.
+   */
+  private isSafeUrl(urlStr: string): boolean {
+    try {
+      const urlObj = new URL(urlStr);
+
+      // Only allow http and https protocols
+      if (urlObj.protocol !== 'http:' && urlObj.protocol !== 'https:') {
+        return false;
+      }
+
+      const hostname = urlObj.hostname;
+
+      // Block localhost and local/internal domains
+      if (hostname === 'localhost' || hostname.endsWith('.local') || hostname.endsWith('.internal')) {
+        return false;
+      }
+
+      // Check IPv4 addresses (new URL() normalizes octal/hex/decimal IPs to standard dot-decimal notation)
+      const ipv4Regex = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/;
+      const match = hostname.match(ipv4Regex);
+      if (match) {
+        const octet1 = parseInt(match[1], 10);
+        const octet2 = parseInt(match[2], 10);
+
+        // 127.x.x.x (Loopback)
+        if (octet1 === 127) return false;
+        // 10.x.x.x (Private)
+        if (octet1 === 10) return false;
+        // 172.16.x.x - 172.31.x.x (Private)
+        if (octet1 === 172 && octet2 >= 16 && octet2 <= 31) return false;
+        // 192.168.x.x (Private)
+        if (octet1 === 192 && octet2 === 168) return false;
+        // 169.254.x.x (Link-local / AWS metadata)
+        if (octet1 === 169 && octet2 === 254) return false;
+        // 0.x.x.x (Current network)
+        if (octet1 === 0) return false;
+      }
+
+      // Block common IPv6 local/private addresses
+      if (hostname.includes('[') && hostname.includes(']')) {
+        const ipv6 = hostname.replace('[', '').replace(']', '').toLowerCase();
+        if (ipv6 === '::1' || ipv6 === '0:0:0:0:0:0:0:1') return false;
+        // Unique Local Addresses (fc00::/7)
+        if (ipv6.startsWith('fc') || ipv6.startsWith('fd')) return false;
+        // Link-local (fe80::/10)
+        if (ipv6.startsWith('fe8') || ipv6.startsWith('fe9') || ipv6.startsWith('fea') || ipv6.startsWith('feb')) return false;
+      }
+
+      return true;
+    } catch (err) {
+      // If URL parsing fails, it's malformed and potentially unsafe
+      return false;
+    }
+  }
+
+  /**
    * RPC Endpoint to trigger a shopping run.
    */
   @callable()
@@ -43,6 +106,17 @@ export class ShopperAgent extends Agent<Env, ShopperState> {
     });
 
     const targetUrl = url || this.env.SHOP_URL || "https://fintechnick.com/shop";
+
+    if (!this.isSafeUrl(targetUrl)) {
+      const errorMsg = `Invalid or unsafe URL provided: ${targetUrl}`;
+      this.setState({
+        ...this.state,
+        status: "failed",
+        lastError: errorMsg
+      });
+      return `Shopping Session Failed: ${errorMsg}`;
+    }
+
     const helper = new PuppeteerBrowserHelper(this.env.MYBROWSER);
     
     try {
@@ -96,13 +170,15 @@ export class ShopperAgent extends Agent<Env, ShopperState> {
             }
             // Check if the clicked element is a submit or pay button to wait longer
             const element = pageData.elements.find(e => e.id === decision.targetId);
-            const isPayOrSubmit = element && (
-              element.text.toLowerCase().includes("pay") ||
-              element.text.toLowerCase().includes("submit") ||
-              element.text.toLowerCase().includes("complete") ||
-              element.text.toLowerCase().includes("buy") ||
-              element.text.toLowerCase().includes("purchase")
-            );
+            let isPayOrSubmit = false;
+            if (element && element.text) {
+              const lowerText = element.text.toLowerCase();
+              isPayOrSubmit = lowerText.includes("pay") ||
+                lowerText.includes("submit") ||
+                lowerText.includes("complete") ||
+                lowerText.includes("buy") ||
+                lowerText.includes("purchase");
+            }
 
             const clickOk = await helper.clickElement(decision.targetId);
             if (!clickOk) {
@@ -129,10 +205,10 @@ export class ShopperAgent extends Agent<Env, ShopperState> {
 
           case "stripe_fill":
             // Automate Stripe iframe using test credentials from worker config or defaults
-            const card = "4242 4242 4242 4242";
-            const expiry = "12/28";
-            const cvc = "123";
-            const name = "Agent Shopper";
+            const card = this.env.STRIPE_TEST_CARD || "4242 4242 4242 4242";
+            const expiry = this.env.STRIPE_TEST_EXPIRY || "12/28";
+            const cvc = this.env.STRIPE_TEST_CVC || "123";
+            const name = this.env.STRIPE_TEST_NAME || "Agent Shopper";
             console.log("Filling Stripe checkout details...");
             const stripeOk = await helper.handleStripeIframe(card, expiry, cvc, name);
             if (stripeOk) {
@@ -167,15 +243,15 @@ export class ShopperAgent extends Agent<Env, ShopperState> {
       await helper.close();
       return `Shopping Session Finished. Status: ${this.state.status}. Summary: ${outcomeSummary}`;
 
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Error during shopping execution:", err);
       this.setState({
         ...this.state,
         status: "failed",
-        lastError: err.message
+        lastError: err instanceof Error ? err.message : String(err)
       });
       await helper.close();
-      return `Shopping Session Failed: ${err.message}`;
+      return `Shopping Session Failed: ${err instanceof Error ? err.message : String(err)}`;
     }
   }
 
@@ -218,17 +294,18 @@ Guidelines:
    * Queries either the Gemini API (if key is present) or falls back to Workers AI.
    */
   private async queryLLM(prompt: string): Promise<LLMResponse> {
-    let geminiError: any = null;
+    let geminiError: unknown = null;
 
     if (this.env.GOOGLE_API_KEY) {
       const maxRetries = 3;
       for (let attempt = 1; attempt <= maxRetries; attempt++) {
         try {
-          const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${this.env.GOOGLE_API_KEY}`;
+          const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent`;
           const response = await fetch(url, {
             method: "POST",
             headers: {
-              "Content-Type": "application/json"
+              "Content-Type": "application/json",
+              "x-goog-api-key": this.env.GOOGLE_API_KEY
             },
             body: JSON.stringify({
               contents: [
@@ -250,16 +327,16 @@ Guidelines:
             throw new Error(`Gemini API returned status ${response.status}: ${await response.text()}`);
           }
 
-          const data: any = await response.json();
+          const data = await response.json() as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> };
           const textResponse = data.candidates?.[0]?.content?.parts?.[0]?.text;
           if (!textResponse) {
             throw new Error("Empty response from Gemini API");
           }
 
           return JSON.parse(textResponse.trim()) as LLMResponse;
-        } catch (err: any) {
+        } catch (err: unknown) {
           geminiError = err;
-          console.warn(`Gemini API call attempt ${attempt} failed:`, err.message || err);
+          console.warn(`Gemini API call attempt ${attempt} failed:`, err instanceof Error ? err.message : String(err));
           if (attempt === maxRetries) {
             console.error("Gemini API call failed after max retries, falling back to Workers AI:", err);
           } else {
@@ -289,7 +366,7 @@ Guidelines:
         ]
       });
 
-      const textResponse = response.response || response.text;
+      const textResponse = response.response || (response as { text?: string }).text;
       if (!textResponse) {
         throw new Error("Empty response from Workers AI");
       }
@@ -308,9 +385,11 @@ Guidelines:
         console.error("Failed to parse LLM response as JSON. Raw response was:", textResponse);
         throw new Error(`LLM output parsing error: ${parseErr}`);
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       if (geminiError) {
-        throw new Error(`Workers AI fallback failed: ${err.message || err}. (Gemini API also failed: ${geminiError.message || geminiError})`);
+        const errMessage = err instanceof Error ? err.message : String(err);
+        const geminiMessage = geminiError instanceof Error ? geminiError.message : String(geminiError);
+        throw new Error(`Workers AI fallback failed: ${errMessage}. (Gemini API also failed: ${geminiMessage})`);
       }
       throw err;
     }
@@ -318,7 +397,7 @@ Guidelines:
 }
 
 export default {
-  async fetch(request: Request, env: Env, ctx: ExecutionContext) {
+  async fetch(request: Request, env: Env) {
     // Route RPC and WebSocket connection requests to appropriate Durable Object agents
     return (
       (await routeAgentRequest(request, env)) ??
