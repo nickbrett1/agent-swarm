@@ -68,6 +68,25 @@ describe('PuppeteerBrowserHelper', () => {
     expect(mockClose).toHaveBeenCalled();
   });
 
+  it('should ignore close if a string error is thrown', async () => {
+    const mockClose = vi.fn().mockRejectedValue('String error');
+    const mockBrowser = {
+      newPage: vi.fn().mockResolvedValue({
+        setViewport: vi.fn(),
+        setDefaultTimeout: vi.fn(),
+      }),
+      close: mockClose,
+    };
+    (puppeteer.launch as any).mockResolvedValue(mockBrowser);
+
+    await helper.init();
+    const warnSpy = vi.spyOn(console, 'warn');
+    await helper.close();
+    expect(mockClose).toHaveBeenCalled();
+    expect(warnSpy).toHaveBeenCalledWith("Ignoring error closing browser (might already be closed):", "String error");
+    warnSpy.mockRestore();
+  });
+
   it('should throw error on goto if not initialized', async () => {
     await expect(helper.goto('http://example.com')).rejects.toThrow('Browser not initialized');
   });
