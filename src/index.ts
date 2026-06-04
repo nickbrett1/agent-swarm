@@ -134,9 +134,10 @@ export class ShopperAgent extends Agent<Env, ShopperState> {
         
         // Check if the current URL is a success/thank-you/complete page
         const currentUrl = await helper.getPageUrl();
-        if (currentUrl.toLowerCase().includes("success") || 
-            currentUrl.toLowerCase().includes("thank") || 
-            currentUrl.toLowerCase().includes("complete")) {
+        const lowerUrl = currentUrl.toLowerCase();
+        if (lowerUrl.includes("success") ||
+            lowerUrl.includes("thank") ||
+            lowerUrl.includes("complete")) {
           console.log(`Success page detected: ${currentUrl}. Finishing shopping run.`);
           finished = true;
           outcomeSummary = `Successfully completed purchase. Redirected to: ${currentUrl}`;
@@ -156,7 +157,14 @@ export class ShopperAgent extends Agent<Env, ShopperState> {
         const decision = await this.queryLLM(systemPrompt, userPrompt);
         console.log("LLM Decision:", JSON.stringify(decision, null, 2));
 
-        const actionLog = `Step ${step}: ${decision.explanation} -> Action: ${decision.action}${decision.targetId ? ' on ' + decision.targetId : ''}${decision.text ? ' value="' + decision.text + '"' : ''}`;
+        // Filter sensitive data before logging
+        const logDecision = { ...decision };
+        if (logDecision.text) {
+          logDecision.text = "***REDACTED***";
+        }
+        console.log("LLM Decision:", JSON.stringify(logDecision, null, 2));
+
+        const actionLog = `Step ${step}: ${decision.explanation} -> Action: ${decision.action}${decision.targetId ? ' on ' + decision.targetId : ''}${decision.text ? ' value="***REDACTED***"' : ''}`;
         this.setState({
           ...this.state,
           history: [...this.state.history, actionLog]
