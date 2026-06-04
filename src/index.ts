@@ -170,13 +170,15 @@ export class ShopperAgent extends Agent<Env, ShopperState> {
             }
             // Check if the clicked element is a submit or pay button to wait longer
             const element = pageData.elements.find(e => e.id === decision.targetId);
-            const isPayOrSubmit = element && (
-              element.text.toLowerCase().includes("pay") ||
-              element.text.toLowerCase().includes("submit") ||
-              element.text.toLowerCase().includes("complete") ||
-              element.text.toLowerCase().includes("buy") ||
-              element.text.toLowerCase().includes("purchase")
-            );
+            let isPayOrSubmit = false;
+            if (element && element.text) {
+              const lowerText = element.text.toLowerCase();
+              isPayOrSubmit = lowerText.includes("pay") ||
+                lowerText.includes("submit") ||
+                lowerText.includes("complete") ||
+                lowerText.includes("buy") ||
+                lowerText.includes("purchase");
+            }
 
             const clickOk = await helper.clickElement(decision.targetId);
             if (!clickOk) {
