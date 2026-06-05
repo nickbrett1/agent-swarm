@@ -69,12 +69,7 @@ jobs:
           command: npm run build
       - run:
           name: Deploy to Cloudflare Workers
-          command: |
-            if [ -n "<< parameters.environment >>" ]; then
-              npx wrangler deploy --env "<< parameters.environment >>"
-            else
-              npx wrangler deploy
-            fi
+          command: npx wrangler deploy --env "<< parameters.environment >>"
 workflows:
   build-and-test:
     jobs:
