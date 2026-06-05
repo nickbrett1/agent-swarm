@@ -3,6 +3,8 @@ import { PuppeteerBrowserHelper } from "./browser.js";
 import type { BrowserWorker } from "@cloudflare/puppeteer";
 import type { Ai } from "@cloudflare/workers-types";
 
+const agentCallable = callable as any;
+
 export interface Env {
   MYBROWSER: BrowserWorker;
   AI: Ai;
@@ -78,8 +80,8 @@ export class ShopperAgent extends Agent<Env, ShopperState> {
       }
 
       // Block common IPv6 local/private addresses
-      if (hostname.includes('[') && hostname.includes(']')) {
-        const ipv6 = hostname.replace('[', '').replace(']', '').toLowerCase();
+      if (hostname.startsWith('[') && hostname.endsWith(']')) {
+        const ipv6 = hostname.substring(1, hostname.length - 1).toLowerCase();
         if (ipv6 === '::1' || ipv6 === '0:0:0:0:0:0:0:1') return false;
         // Unique Local Addresses (fc00::/7)
         if (ipv6.startsWith('fc') || ipv6.startsWith('fd')) return false;
@@ -88,7 +90,7 @@ export class ShopperAgent extends Agent<Env, ShopperState> {
       }
 
       return true;
-    } catch (err) {
+    } catch {
       // If URL parsing fails, it's malformed and potentially unsafe
       return false;
     }
@@ -97,8 +99,7 @@ export class ShopperAgent extends Agent<Env, ShopperState> {
   /**
    * RPC Endpoint to trigger a shopping run.
    */
-  // @ts-ignore
-  @callable()
+  @agentCallable()
   async runShopping(persona: string, url?: string): Promise<string> {
     this.setState({
       persona,
@@ -157,7 +158,6 @@ export class ShopperAgent extends Agent<Env, ShopperState> {
 
         // 3. Query LLM (Gemini or Workers AI)
         const decision = await this.queryLLM(systemPrompt, userPrompt);
-        console.log("LLM Decision:", JSON.stringify(decision, null, 2));
 
         // Filter sensitive data before logging
         const logDecision = { ...decision };
@@ -174,7 +174,7 @@ export class ShopperAgent extends Agent<Env, ShopperState> {
 
         // 4. Execute Action
         switch (decision.action) {
-          case "click":
+          case "click": {
             if (!decision.targetId) {
               throw new Error("Action 'click' requires a 'targetId'");
             }
@@ -202,8 +202,9 @@ export class ShopperAgent extends Agent<Env, ShopperState> {
               await helper.wait(1500); // Wait for dynamic layout/routing
             }
             break;
+          }
 
-          case "type":
+          case "type": {
             if (!decision.targetId || decision.text === undefined) {
               throw new Error("Action 'type' requires both 'targetId' and 'text'");
             }
@@ -212,8 +213,9 @@ export class ShopperAgent extends Agent<Env, ShopperState> {
               console.warn(`Type into ${decision.targetId} failed.`);
             }
             break;
+          }
 
-          case "stripe_fill":
+          case "stripe_fill": {
             // Automate Stripe iframe using test credentials from worker config or defaults
             const card = this.env.STRIPE_TEST_CARD;
             const expiry = this.env.STRIPE_TEST_EXPIRY;
@@ -233,17 +235,25 @@ export class ShopperAgent extends Agent<Env, ShopperState> {
             }
             await helper.wait(1000);
             break;
+          }
 
-          case "wait":
+          case "wait": {
             console.log("Waiting 3 seconds...");
             await helper.wait(3000);
             break;
+          }
 
-          case "finish":
+          case "finish": {
             finished = true;
             outcomeSummary = decision.explanation;
             this.setState({ ...this.state, status: "completed" });
             break;
+          }
+
+          default: {
+            const _exhaustiveCheck: never = decision.action;
+            throw new Error(`Unsupported action: ${_exhaustiveCheck}`);
+          }
         }
 
         // Small cooldown between actions
@@ -255,7 +265,6 @@ export class ShopperAgent extends Agent<Env, ShopperState> {
         this.setState({ ...this.state, status: "failed", lastError: outcomeSummary });
       }
 
-      await helper.close();
       return `Shopping Session Finished. Status: ${this.state.status}. Summary: ${outcomeSummary}`;
 
     } catch (err: unknown) {
@@ -265,8 +274,9 @@ export class ShopperAgent extends Agent<Env, ShopperState> {
         status: "failed",
         lastError: err instanceof Error ? err.message : String(err)
       });
-      await helper.close();
       return `Shopping Session Failed: ${err instanceof Error ? err.message : String(err)}`;
+    } finally {
+      await helper.close();
     }
   }
 
@@ -395,10 +405,9 @@ ${textSummary}
 
       // Clean markdown blocks if LLM ignored instructions
       let cleanText = textResponse.trim();
-      if (cleanText.startsWith("```json")) {
-        cleanText = cleanText.substring(7, cleanText.length - 3).trim();
-      } else if (cleanText.startsWith("```")) {
-        cleanText = cleanText.substring(3, cleanText.length - 3).trim();
+      const match = cleanText.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/);
+      if (match) {
+        cleanText = match[1].trim();
       }
 
       try {
@@ -443,8 +452,12 @@ async function verifyHmacSignature(
     );
 
     // Convert hex signature back to Uint8Array
+    const matches = signatureHex.match(/.{1,2}/g);
+    if (!matches) {
+      return false;
+    }
     const sigBytes = new Uint8Array(
-      signatureHex.match(/.{1,2}/g)!.map(byte => parseInt(byte, 16))
+      matches.map(byte => parseInt(byte, 16))
     );
 
     // Verify the expiry timestamp matches the signature
