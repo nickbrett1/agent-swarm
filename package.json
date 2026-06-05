@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "build": "tsc",
     "dev": "./scripts/run-wrangler-dev.sh",
     "deploy": "wrangler deploy",
     "config": "./scripts/setup-wrangler-config.sh",

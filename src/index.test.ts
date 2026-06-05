@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { ShopperAgent } from './index.ts';
+import { ShopperAgent } from './index.js';
 
 // Mock the agents module so that extending Agent doesn't try to invoke cloudflare native bindings
 vi.mock('agents', () => ({

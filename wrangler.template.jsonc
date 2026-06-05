@@ -34,5 +34,10 @@
       "invocation_logs": true,
       "persist": true
     }
+  },
+  "env": {
+    "preview": {
+      "name": "agent-swarm-preview"
+    }
   }
 }

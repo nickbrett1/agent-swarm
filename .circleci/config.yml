@@ -37,6 +37,10 @@ jobs:
 
   deploy-to-cloudflare:
     executor: node/default
+    parameters:
+      environment:
+        type: string
+        default: ""
     steps:
       - checkout
       - restore_cache:
@@ -65,21 +69,41 @@ jobs:
           command: npm run build
       - run:
           name: Deploy to Cloudflare Workers
-          command: npx wrangler deploy
+          command: |
+            if [ -n "<< parameters.environment >>" ]; then
+              npx wrangler deploy --env "<< parameters.environment >>"
+            else
+              npx wrangler deploy
+            fi
 workflows:
   build-and-test:
     jobs:
-      - build:
-          context: common
-
-
-      - deploy-to-cloudflare:
-          context: common
-          requires:
-            - build
-
       - ggshield/scan:
           name: ggshield-scan
           context: common
           base_revision: << pipeline.git.base_revision >>
           revision: <<pipeline.git.revision>>
+
+      - build:
+          context: common
+          requires:
+            - ggshield-scan
+
+      - deploy-to-cloudflare:
+          name: deploy-preview
+          context: common
+          environment: "preview"
+          requires:
+            - build
+          filters:
+            branches:
+              ignore: main
+
+      - deploy-to-cloudflare:
+          name: deploy-production
+          context: common
+          requires:
+            - build
+          filters:
+            branches:
+              only: main

@@ -450,13 +450,6 @@ describe('PuppeteerBrowserHelper', () => {
       }),
       url: mockUrl,
       $$: vi.fn().mockResolvedValue([])
-  it('should handle exception during stripe iframe handling', async () => {
-    const mockPage = {
-      setViewport: vi.fn(),
-      setDefaultTimeout: vi.fn(),
-      frames: vi.fn().mockImplementation(() => {
-        throw new Error('Frames error');
-      }),
     };
     const mockBrowser = {
       newPage: vi.fn().mockResolvedValue(mockPage),
@@ -474,7 +467,22 @@ describe('PuppeteerBrowserHelper', () => {
     // Cleanup globals
     global.document = originalDocument;
     global.XPathResult = originalXPathResult;
+  });
 
+  it('should handle exception during stripe iframe handling', async () => {
+    const mockPage = {
+      setViewport: vi.fn(),
+      setDefaultTimeout: vi.fn(),
+      frames: vi.fn().mockImplementation(() => {
+        throw new Error('Frames error');
+      }),
+    };
+    const mockBrowser = {
+      newPage: vi.fn().mockResolvedValue(mockPage),
+    };
+    (puppeteer.launch as any).mockResolvedValue(mockBrowser);
+
+    await helper.init();
     const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const result = await helper.handleStripeIframe('4242', '12/28', '123', 'Test User');
 
