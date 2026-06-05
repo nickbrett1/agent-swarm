@@ -462,8 +462,69 @@ async function verifyHmacSignature(
 
 export default {
   async fetch(request: Request, env: Env) {
-    // 1. Verify access signature if secret is configured
     const url = new URL(request.url);
+
+    // 1. Handle CORS preflight requests
+    if (request.method === "OPTIONS") {
+      return new Response(null, {
+        status: 204,
+        headers: {
+          "Access-Control-Allow-Origin": "*",
+          "Access-Control-Allow-Methods": "GET, OPTIONS",
+          "Access-Control-Allow-Headers": "Content-Type"
+        }
+      });
+    }
+
+    // 2. Serve public API metadata without requiring signatures
+    if (url.pathname === "/info" || url.pathname === "/inspect") {
+      const info = {
+        name: "agent-swarm",
+        description: "Autonomous browser rendering swarm that runs stateful agent sessions.",
+        version: "0.1.0",
+        agents: {
+          ShopperAgent: {
+            description: "Launches a browser rendering session to browse, search, and purchase products in Stripe test-mode.",
+            methods: {
+              runShopping: {
+                description: "Triggers a browser automation sequence with the specified shopping persona.",
+                parameters: {
+                  type: "object",
+                  properties: {
+                    persona: {
+                      type: "string",
+                      description: "The buyer behavior profile (e.g., 'A tech buyer looking for a sticker').",
+                      required: true
+                    },
+                    url: {
+                      type: "string",
+                      description: "Override URL to shop on. Defaults to the configured SHOP_URL.",
+                      required: false
+                    }
+                  }
+                },
+                returns: {
+                  type: "string",
+                  description: "A summary string of the shopping session outcome."
+                }
+              }
+            }
+          }
+        }
+      };
+
+      return new Response(JSON.stringify(info, null, 2), {
+        status: 200,
+        headers: {
+          "Content-Type": "application/json",
+          "Access-Control-Allow-Origin": "*",
+          "Access-Control-Allow-Methods": "GET, OPTIONS",
+          "Access-Control-Allow-Headers": "Content-Type"
+        }
+      });
+    }
+
+    // 3. Verify access signature if secret is configured
     const expiry = url.searchParams.get("expiry");
     const signature = url.searchParams.get("signature");
     
@@ -480,7 +541,7 @@ export default {
       }
     }
 
-    // 2. If valid, route the websocket/RPC request to the Durable Object
+    // 4. If valid, route the websocket/RPC request to the Durable Object
     return (
       (await routeAgentRequest(request, env)) ??
       new Response("Cloudflare Agent Swarm is running. Use the WebSocket/RPC client to trigger runs.", {

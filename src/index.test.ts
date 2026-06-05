@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { ShopperAgent } from './index.js';
+import workerDefault, { ShopperAgent } from './index.js';
 
 // Mock the agents module so that extending Agent doesn't try to invoke cloudflare native bindings
 vi.mock('agents', () => ({
@@ -162,5 +162,25 @@ describe('ShopperAgent queryLLM Fallback Logic', () => {
 
     await promise;
     vi.useRealTimers();
+  });
+});
+
+describe('Worker Default Export', () => {
+  it('should return info on /info', async () => {
+    const req = new Request('http://localhost/info');
+    const env = {};
+    const res = await workerDefault.fetch(req, env as any);
+    expect(res.status).toBe(200);
+    const data = await res.json() as any;
+    expect(data.name).toBe('agent-swarm');
+    expect(data.agents.ShopperAgent).toBeDefined();
+  });
+
+  it('should return 204 on OPTIONS preflight', async () => {
+    const req = new Request('http://localhost/info', { method: 'OPTIONS' });
+    const env = {};
+    const res = await workerDefault.fetch(req, env as any);
+    expect(res.status).toBe(204);
+    expect(res.headers.get('Access-Control-Allow-Origin')).toBe('*');
   });
 });

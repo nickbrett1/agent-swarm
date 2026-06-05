@@ -41,6 +41,61 @@ sequenceDiagram
 
 ---
 
+## API Introspection & Discoverability (/info)
+
+To make it easy for your website at [fintechnick.com](https://fintechnick.com) to understand and dynamically inspect what the Worker does, a public metadata endpoint is available at `GET /info` (and `/inspect`). 
+
+This endpoint does **not** require HMAC signature headers or tokens and is fully CORS-enabled (allows requests from any origin), meaning you can request it directly from client-side SvelteKit scripts.
+
+### Querying the API metadata
+You can fetch it dynamically in SvelteKit:
+```typescript
+const response = await fetch('https://agent-swarm.YOUR_SUBDOMAIN.workers.dev/info');
+const metadata = await response.json();
+console.log(metadata.agents.ShopperAgent.methods.runShopping.parameters);
+```
+
+### JSON Schema Output
+The returned payload uses standard JSON-schema-like typing to describe the agent parameters and requirements:
+```json
+{
+  "name": "agent-swarm",
+  "description": "Autonomous browser rendering swarm that runs stateful agent sessions.",
+  "version": "0.1.0",
+  "agents": {
+    "ShopperAgent": {
+      "description": "Launches a browser rendering session to browse, search, and purchase products in Stripe test-mode.",
+      "methods": {
+        "runShopping": {
+          "description": "Triggers a browser automation sequence with the specified shopping persona.",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "persona": {
+                "type": "string",
+                "description": "The buyer behavior profile (e.g., 'A tech buyer looking for a sticker').",
+                "required": true
+              },
+              "url": {
+                "type": "string",
+                "description": "Override URL to shop on. Defaults to the configured SHOP_URL.",
+                "required": false
+              }
+            }
+          },
+          "returns": {
+            "type": "string",
+            "description": "A summary string of the shopping session outcome."
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+---
+
 ## Step 1: Deploy the Backend to Cloudflare
 
 To expose the API, you must deploy the worker to your Cloudflare account.
