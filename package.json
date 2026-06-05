@@ -1,6 +1,7 @@
 {
   "name": "agent-swarm",
   "version": "0.1.0",
+  "description": "An autonomous e-commerce agent system powered by Cloudflare Workers AI, Browser Rendering, and the Cloudflare Agents SDK.",
   "private": true,
   "type": "module",
   "scripts": {

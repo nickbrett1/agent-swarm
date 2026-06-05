@@ -13,4 +13,5 @@ For a detailed understanding of the project structure, architecture, and how to 
 - `src/`: The main TypeScript project containing Cloudflare Agents logic.
 - `scripts/`: Utility scripts for local setup and cloud login.
 - `docs/`: Design documents and guides.
-A coding-agents, editor-tools, shell-tools, spec-kit, devcontainer-typescript, docker project generated with genproj
+
+An autonomous e-commerce agent system powered by Cloudflare Workers AI, Browser Rendering, and the Cloudflare Agents SDK.
