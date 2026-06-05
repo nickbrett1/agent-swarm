@@ -7,7 +7,7 @@
     "dev": "./scripts/run-wrangler-dev.sh",
     "deploy": "wrangler deploy",
     "config": "./scripts/setup-wrangler-config.sh",
-    "test:coverage": "vitest run --coverage"
+    "test": "vitest run --coverage"
   },
   "dependencies": {
     "@cloudflare/puppeteer": "latest",

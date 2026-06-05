@@ -12,6 +12,7 @@ export interface Env {
   STRIPE_TEST_EXPIRY?: string;
   STRIPE_TEST_CVC?: string;
   STRIPE_TEST_NAME?: string;
+  AGENT_SWARM_SECRET?: string;
 }
 
 export interface ShopperState {
@@ -416,9 +417,69 @@ ${textSummary}
   }
 }
 
+// Helper to verify the SvelteKit HMAC signature
+async function verifyHmacSignature(
+  expiryStr: string | null,
+  signatureHex: string | null,
+  secret: string
+): Promise<boolean> {
+  if (!expiryStr || !signatureHex) return false;
+
+  try {
+    const expiry = parseInt(expiryStr, 10);
+    // Ensure token hasn't expired (and timestamp is valid)
+    if (isNaN(expiry) || Date.now() > expiry) {
+      return false;
+    }
+
+    const encoder = new TextEncoder();
+    const key = await crypto.subtle.importKey(
+      'raw',
+      encoder.encode(secret),
+      { name: 'HMAC', hash: 'SHA-256' },
+      false,
+      ['verify']
+    );
+
+    // Convert hex signature back to Uint8Array
+    const sigBytes = new Uint8Array(
+      signatureHex.match(/.{1,2}/g)!.map(byte => parseInt(byte, 16))
+    );
+
+    // Verify the expiry timestamp matches the signature
+    return await crypto.subtle.verify(
+      'HMAC',
+      key,
+      sigBytes,
+      encoder.encode(expiryStr)
+    );
+  } catch (err) {
+    console.error("Signature verification error:", err);
+    return false;
+  }
+}
+
 export default {
   async fetch(request: Request, env: Env) {
-    // Route RPC and WebSocket connection requests to appropriate Durable Object agents
+    // 1. Verify access signature if secret is configured
+    const url = new URL(request.url);
+    const expiry = url.searchParams.get("expiry");
+    const signature = url.searchParams.get("signature");
+    
+    const secret = env.AGENT_SWARM_SECRET;
+
+    if (secret) {
+      const isAuthorized = await verifyHmacSignature(expiry, signature, secret);
+      
+      if (!isAuthorized) {
+        return new Response("Unauthorized Swarm Connection: Invalid or expired signature", {
+          status: 401,
+          headers: { "Content-Type": "text/plain" }
+        });
+      }
+    }
+
+    // 2. If valid, route the websocket/RPC request to the Durable Object
     return (
       (await routeAgentRequest(request, env)) ??
       new Response("Cloudflare Agent Swarm is running. Use the WebSocket/RPC client to trigger runs.", {
