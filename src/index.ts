@@ -538,43 +538,12 @@ export default {
       });
     }
 
-    // 3. Serve public API metadata and current usage limits without requiring signatures
+    // 3. Serve public API metadata without requiring signatures
     if (url.pathname === "/info" || url.pathname === "/inspect") {
-      let browserLimits: any = { configured: false };
-      if (env.MYBROWSER) {
-        try {
-          const limits = await puppeteer.limits(env.MYBROWSER);
-          browserLimits = {
-            configured: true,
-            maxConcurrentSessions: limits.maxConcurrentSessions,
-            activeSessionsCount: limits.activeSessions ? limits.activeSessions.length : 0,
-            allowedBrowserAcquisitions: limits.allowedBrowserAcquisitions,
-            timeUntilNextAcquisition: limits.timeUntilNextAllowedBrowserAcquisition,
-            usedBrowserTimeSeconds: (limits as any).usedBrowserTimeSeconds || 0
-          };
-        } catch (err) {
-          browserLimits = {
-            configured: true,
-            error: err instanceof Error ? err.message : String(err)
-          };
-        }
-      }
-
       const info = {
         name: "agent-swarm",
         description: "Autonomous browser rendering swarm that runs stateful agent sessions.",
         version: "0.1.0",
-        limits: {
-          browser: browserLimits,
-          ai: {
-            configured: !!env.AI,
-            model: "@cf/meta/llama-3.1-8b-instruct"
-          },
-          gemini: {
-            configured: !!(env.GOOGLE_API_KEY || env.GEMINI_API_KEY),
-            model: "gemini-2.0-flash"
-          }
-        },
         agents: {
           ShopperAgent: {
             description: "Launches a browser rendering session to browse, search, and purchase products in Stripe test-mode.",
