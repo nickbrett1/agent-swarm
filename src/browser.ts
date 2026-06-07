@@ -11,6 +11,16 @@ export interface InteractiveElement {
   xpath: string; // Used to locate the element dynamically
 }
 
+export interface ElementData {
+  tag: string;
+  type: string;
+  text: string;
+  placeholder: string;
+  name: string;
+  role: string;
+  xpath: string;
+}
+
 // Selectors for Stripe Checkout inputs inside iframe/page
 const STRIPE_CARD_SELECTORS = ['input#cardNumber', 'input[name="cardnumber"]', 'input[placeholder*="1234"]', 'input[aria-label*="Card number"]'];
 const STRIPE_EXPIRY_SELECTORS = ['input#cardExpiry', 'input[name="exp-date"]', 'input[placeholder*="MM"]', 'input[aria-label*="Expiration"]'];
@@ -64,7 +74,7 @@ export class PuppeteerBrowserHelper {
   async getInteractiveElements(): Promise<{ elements: InteractiveElement[]; textSummary: string }> {
     if (!this.page) throw new Error("Browser not initialized");
 
-    let elementsData: any[] = [];
+    let elementsData: ElementData[] = [];
     let attempts = 0;
     const maxAttempts = 3;
 
@@ -72,16 +82,6 @@ export class PuppeteerBrowserHelper {
       try {
         // We execute a script in the browser context to find and label interactive elements
         elementsData = await this.page.evaluate(() => {
-          interface ElementData {
-            tag: string;
-            type: string;
-            text: string;
-            placeholder: string;
-            name: string;
-            role: string;
-            xpath: string;
-          }
-
           function getXPath(element: Element): string {
             if (element.id) {
               return `//*[@id="${element.id}"]`;

@@ -3,7 +3,7 @@ import { PuppeteerBrowserHelper } from "./browser.js";
 import type { BrowserWorker } from "@cloudflare/puppeteer";
 import type { Ai } from "@cloudflare/workers-types";
 
-const agentCallable = callable as any;
+const agentCallable = callable as Function;
 
 export interface Env {
   MYBROWSER: BrowserWorker;
@@ -401,7 +401,7 @@ ${textSummary}
         ]
       });
 
-      const aiResponse = response as Record<string, any>;
+      const aiResponse = response as Record<string, unknown>;
       const textResponse = (aiResponse.response || aiResponse.text) as string | undefined;
       if (!textResponse) {
         throw new Error("Empty response from Workers AI");
