@@ -18,8 +18,7 @@
       ],
       "env": {
         "SONARQUBE_TOKEN": "$SONARQUBE_TOKEN",
-        "SONARQUBE_URL": "https://sonarcloud.io",
-        "SONARQUBE_ORG": "$SONARQUBE_ORG"
+        "SONARQUBE_ORGANIZATION": "$SONARQUBE_ORG"
       }
     },
     "circleci": {

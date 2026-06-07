@@ -326,9 +326,9 @@ ${textSummary}
 
     if (apiKey) {
       const maxRetries = 3;
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent`;
       for (let attempt = 1; attempt <= maxRetries; attempt++) {
         try {
-          const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent`;
           const response = await fetch(url, {
             method: "POST",
             headers: {

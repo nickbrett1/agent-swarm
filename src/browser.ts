@@ -92,22 +92,22 @@ export class PuppeteerBrowserHelper {
               let index = 0;
               let hasSiblingWithSameTag = false;
               
-              let sibling = current.previousSibling;
-              while (sibling) {
-                if (sibling.nodeType !== Node.DOCUMENT_TYPE_NODE && sibling.nodeName === current.nodeName) {
+              let prevSibling = current.previousSibling;
+              while (prevSibling) {
+                if (prevSibling.nodeType !== Node.DOCUMENT_TYPE_NODE && prevSibling.nodeName === current.nodeName) {
                   index++;
                   hasSiblingWithSameTag = true;
                 }
-                sibling = sibling.previousSibling;
+                prevSibling = prevSibling.previousSibling;
               }
               
-              sibling = current.nextSibling;
-              while (sibling) {
-                if (sibling.nodeName === current.nodeName) {
+              let nextSibling = current.nextSibling;
+              while (nextSibling) {
+                if (nextSibling.nodeName === current.nodeName) {
                   hasSiblingWithSameTag = true;
                   break;
                 }
-                sibling = sibling.nextSibling;
+                nextSibling = nextSibling.nextSibling;
               }
               
               const tagName = current.nodeName.toLowerCase();
