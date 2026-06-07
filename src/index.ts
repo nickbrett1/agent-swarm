@@ -118,7 +118,7 @@ export class ShopperAgent extends Agent<Env, ShopperState> {
         status: "failed",
         lastError: errorMsg
       });
-      return `Shopping Session Failed: ${errorMsg}`;
+      throw new Error(errorMsg);
     }
 
     const helper = new PuppeteerBrowserHelper(this.env.MYBROWSER);
@@ -127,7 +127,7 @@ export class ShopperAgent extends Agent<Env, ShopperState> {
       await helper.init();
       await helper.goto(targetUrl);
       
-      const maxSteps = 10;
+      const maxSteps = 25;
       let step = 0;
       let finished = false;
       let outcomeSummary = "";
@@ -262,8 +262,9 @@ export class ShopperAgent extends Agent<Env, ShopperState> {
       }
 
       if (!finished) {
-        outcomeSummary = "Reached maximum action limit (10 steps) without finishing.";
+        outcomeSummary = `Reached maximum action limit (${maxSteps} steps) without finishing.`;
         this.setState({ ...this.state, status: "failed", lastError: outcomeSummary });
+        throw new Error(outcomeSummary);
       }
 
       return `Shopping Session Finished. Status: ${this.state.status}. Summary: ${outcomeSummary}`;
@@ -275,7 +276,7 @@ export class ShopperAgent extends Agent<Env, ShopperState> {
         status: "failed",
         lastError: err instanceof Error ? err.message : String(err)
       });
-      return `Shopping Session Failed: ${err instanceof Error ? err.message : String(err)}`;
+      throw err;
     } finally {
       await helper.close();
     }
