@@ -10,6 +10,9 @@
     "binding": "MYBROWSER",
     "remote": true
   },
+  "ai": {
+    "binding": "AI"
+  },
   "durable_objects": {
     "bindings": [
       {

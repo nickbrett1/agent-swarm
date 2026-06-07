@@ -9,6 +9,7 @@ export interface Env {
   MYBROWSER: BrowserWorker;
   AI: Ai;
   GOOGLE_API_KEY?: string;
+  GEMINI_API_KEY?: string;
   SHOP_URL?: string;
   STRIPE_TEST_CARD?: string;
   STRIPE_TEST_EXPIRY?: string;
@@ -320,8 +321,9 @@ ${textSummary}
    */
   private async queryLLM(systemPrompt: string, userPrompt: string): Promise<LLMResponse> {
     let geminiError: unknown = null;
+    const apiKey = this.env.GOOGLE_API_KEY || this.env.GEMINI_API_KEY;
 
-    if (this.env.GOOGLE_API_KEY) {
+    if (apiKey) {
       const maxRetries = 3;
       for (let attempt = 1; attempt <= maxRetries; attempt++) {
         try {
@@ -330,7 +332,7 @@ ${textSummary}
             method: "POST",
             headers: {
               "Content-Type": "application/json",
-              "x-goog-api-key": this.env.GOOGLE_API_KEY
+              "x-goog-api-key": apiKey
             },
             body: JSON.stringify({
               systemInstruction: {
