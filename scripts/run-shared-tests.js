@@ -104,7 +104,6 @@ async function run() {
           break;
         }
 
-        // 3. If the watch runner is idle, but the last run was BEFORE our start time:
         if (statusObj.status !== 'running' && runTime < startTime) {
           // If we haven't seen it transition to running within the grace period, force a run
           if (!hasSeenRunning && elapsed >= gracePeriod) {
@@ -112,6 +111,22 @@ async function run() {
             await triggerRun();
             hasSeenRunning = true;
           }
+        }
+
+        const maxTimeout = 100000; // 100 seconds
+        const warnInterval = 15000; // 15 seconds
+        const elapsedSinceLastWarn = elapsed % warnInterval;
+        if (elapsed > 0 && elapsedSinceLastWarn < checkInterval) {
+          console.log(`\n[SharedTestRunner] Still waiting for watch runner (elapsed: ${Math.round(elapsed/1000)}s)...`);
+          console.log(`[SharedTestRunner] Status: ${statusObj.status}, Results: ${statusObj.results ? 'available' : 'none'}`);
+          console.log(`[SharedTestRunner] Tip: If the runner is hung, run 'npx kill-port 51204' or kill the node process.`);
+        }
+
+        if (elapsed >= maxTimeout) {
+          console.log(`\n[SharedTestRunner] Watch runner timed out after ${maxTimeout/1000}s.`);
+          console.log(`[SharedTestRunner] Falling back to standard vitest run...`);
+          runFallback();
+          return;
         }
 
         process.stdout.write('.');

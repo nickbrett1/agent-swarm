@@ -390,7 +390,7 @@ ${textSummary}
     }
 
     console.log("Calling Workers AI Llama model...");
-    const model = "@cf/meta/llama-3-8b-instruct";
+    const model = "@cf/meta/llama-3.1-8b-instruct";
     
     try {
       const response = await this.env.AI.run(model, {
@@ -400,7 +400,8 @@ ${textSummary}
         ]
       });
 
-      const textResponse = response.response || (response as { text?: string }).text;
+      const aiResponse = response as Record<string, any>;
+      const textResponse = (aiResponse.response || aiResponse.text) as string | undefined;
       if (!textResponse) {
         throw new Error("Empty response from Workers AI");
       }

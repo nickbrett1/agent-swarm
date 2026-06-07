@@ -28,7 +28,6 @@
     }
   ],
   "vars": {
-    "GOOGLE_API_KEY": "${GOOGLE_API_KEY}",
     "SHOP_URL": "https://fintechnick.com/shop"
   },
   "observability": {
