@@ -507,7 +507,7 @@ export default {
             allowedBrowserAcquisitions: limits.allowedBrowserAcquisitions,
             timeUntilNextAcquisition: limits.timeUntilNextAllowedBrowserAcquisition,
             usedBrowserTimeSeconds: (limits as any).usedBrowserTimeSeconds || 0,
-            browserTimeSecondsLimit: (limits as any).browserTimeSecondsLimit
+            browserTimeSecondsLimit: (limits as any).browserTimeSecondsLimit !== undefined ? (limits as any).browserTimeSecondsLimit : "unlimited"
           };
         } catch (err) {
           browserLimits = {
