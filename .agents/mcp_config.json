@@ -17,7 +17,7 @@
         "sonarqube-mcp-server"
       ],
       "env": {
-        "SONARQUBE_TOKEN": "cbd04dc701d10e40a65749b5cfb19f9dc2ac7b9b",
+        "SONARQUBE_TOKEN": "$SONARQUBE_TOKEN",
         "SONARQUBE_ORGANIZATION": "bem"
       }
     },

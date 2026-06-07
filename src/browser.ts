@@ -76,44 +76,85 @@ export class PuppeteerBrowserHelper {
   }
 
   async init(): Promise<void> {
-    console.log("Launching Cloudflare Browser Rendering session...");
+    console.log("Initializing browser helper...");
 
-    // Proactively clear stale sessions to avoid 429 concurrency limit
-    const cleared = await this.clearStaleSessions();
-    if (cleared > 0) {
-      console.log("Waiting 10 seconds for sessions to close on Cloudflare...");
-      await new Promise((resolve) => setTimeout(resolve, 10000));
+    // 1. Try to reuse an existing session if available
+    if (this.browserBinding && typeof this.browserBinding.fetch === 'function') {
+      try {
+        console.log("Checking for existing active sessions to reuse...");
+        const sessions = await puppeteer.sessions(this.browserBinding);
+        if (sessions && sessions.length > 0) {
+          const sessionId = sessions[0].sessionId || (sessions[0] as any).id;
+          if (sessionId) {
+            console.log(`Attempting to connect to existing session: ${sessionId}`);
+            this.browser = await puppeteer.connect(this.browserBinding, sessionId);
+            console.log("Successfully connected to existing session.");
+          }
+        }
+      } catch (connectErr) {
+        console.warn("Failed to connect to existing session, will clear and launch new:", connectErr instanceof Error ? connectErr.message : String(connectErr));
+      }
     }
 
-    try {
-      this.browser = await puppeteer.launch(this.browserBinding, { keep_alive: 10000 });
-    } catch (err) {
-      console.warn("Failed to launch Puppeteer session initially. Attempting to clear stale sessions and retry...", err instanceof Error ? err.message : String(err));
-
-      const retryCleared = await this.clearStaleSessions();
-      if (retryCleared > 0) {
-        console.log("Waiting 10 seconds for sessions to close on Cloudflare before retry...");
+    // 2. If no browser is connected yet, clean up and launch a new one
+    if (!this.browser) {
+      console.log("No reusable session connected. Clearing stale sessions and launching new...");
+      const cleared = await this.clearStaleSessions();
+      if (cleared > 0) {
+        console.log("Waiting 10 seconds for sessions to close on Cloudflare...");
         await new Promise((resolve) => setTimeout(resolve, 10000));
       }
 
-      console.log("Retrying launch after clearing stale sessions...");
-      this.browser = await puppeteer.launch(this.browserBinding, { keep_alive: 10000 });
+      try {
+        this.browser = await puppeteer.launch(this.browserBinding, { keep_alive: 10000 });
+      } catch (err) {
+        console.warn("Failed to launch Puppeteer session initially. Retrying cleanup...", err instanceof Error ? err.message : String(err));
+
+        const retryCleared = await this.clearStaleSessions();
+        if (retryCleared > 0) {
+          console.log("Waiting 10 seconds for sessions to close on Cloudflare before retry...");
+          await new Promise((resolve) => setTimeout(resolve, 10000));
+        }
+
+        console.log("Retrying launch after clearing sessions...");
+        this.browser = await puppeteer.launch(this.browserBinding, { keep_alive: 10000 });
+      }
     }
 
+    // 3. Set up the page and request interception
     this.page = await this.browser.newPage();
     await this.page.setViewport({ width: 1280, height: 720 });
-    // Increase default timeout
     this.page.setDefaultTimeout(15000);
+
+    // Block unnecessary requests (images, media, fonts) to save bandwidth and execution time
+    try {
+      await this.page.setRequestInterception(true);
+      this.page.on("request", (req) => {
+        const resourceType = req.resourceType();
+        if (["image", "media", "font"].includes(resourceType)) {
+          req.abort();
+        } else {
+          req.continue();
+        }
+      });
+    } catch (interceptErr) {
+      console.warn("Failed to enable request interception:", interceptErr);
+    }
   }
 
   async close(): Promise<void> {
     if (this.browser) {
       try {
-        console.log("Closing browser session...");
-        await this.browser.close();
+        if (typeof this.browser.disconnect === 'function') {
+          console.log("Disconnecting from browser session (keeping it alive for reuse)...");
+          await this.browser.disconnect();
+        } else {
+          console.log("Closing browser session...");
+          await this.browser.close();
+        }
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
-        console.warn("Ignoring error closing browser (might already be closed):", message);
+        console.warn("Ignoring error closing/disconnecting browser:", message);
       } finally {
         this.browser = null;
         this.page = null;
@@ -124,7 +165,7 @@ export class PuppeteerBrowserHelper {
   async goto(url: string): Promise<void> {
     if (!this.page) throw new Error("Browser not initialized");
     console.log(`Navigating to ${url}...`);
-    await this.page.goto(url, { waitUntil: "load" });
+    await this.page.goto(url, { waitUntil: "domcontentloaded" });
   }
 
   async getPageUrl(): Promise<string> {

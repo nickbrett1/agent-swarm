@@ -5,6 +5,15 @@ import puppeteer from '@cloudflare/puppeteer';
 vi.mock('@cloudflare/puppeteer', () => ({
   default: {
     launch: vi.fn(),
+    connect: vi.fn(),
+    sessions: vi.fn().mockResolvedValue([]),
+    limits: vi.fn().mockResolvedValue({
+      activeSessions: [],
+      maxConcurrentSessions: 4,
+      allowedBrowserAcquisitions: 1,
+      timeUntilNextAllowedBrowserAcquisition: 0,
+      usedBrowserTimeSeconds: 0,
+    }),
   },
 }));
 
@@ -84,7 +93,7 @@ describe('PuppeteerBrowserHelper', () => {
     const warnSpy = vi.spyOn(console, 'warn');
     await helper.close();
     expect(mockClose).toHaveBeenCalled();
-    expect(warnSpy).toHaveBeenCalledWith("Ignoring error closing browser (might already be closed):", "String error");
+    expect(warnSpy).toHaveBeenCalledWith("Ignoring error closing/disconnecting browser:", "String error");
     warnSpy.mockRestore();
   });
 
@@ -107,7 +116,7 @@ describe('PuppeteerBrowserHelper', () => {
     await helper.init();
     await helper.goto('http://example.com');
 
-    expect(mockGoto).toHaveBeenCalledWith('http://example.com', { waitUntil: 'load' });
+    expect(mockGoto).toHaveBeenCalledWith('http://example.com', { waitUntil: 'domcontentloaded' });
   });
 
   it('should get page url', async () => {
