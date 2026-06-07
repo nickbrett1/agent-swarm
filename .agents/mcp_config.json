@@ -17,8 +17,9 @@
         "sonarqube-mcp-server"
       ],
       "env": {
-        "SONAR_TOKEN": "$SONAR_TOKEN",
-        "SONAR_HOST_URL": "$SONAR_HOST_URL"
+        "SONARQUBE_TOKEN": "$SONARQUBE_TOKEN",
+        "SONARQUBE_URL": "https://sonarcloud.io",
+        "SONARQUBE_ORG": "$SONARQUBE_ORG"
       }
     },
     "circleci": {
