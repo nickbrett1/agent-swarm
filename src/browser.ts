@@ -36,7 +36,41 @@ export class PuppeteerBrowserHelper {
 
   async init(): Promise<void> {
     console.log("Launching Cloudflare Browser Rendering session...");
-    this.browser = await puppeteer.launch(this.browserBinding);
+    try {
+      this.browser = await puppeteer.launch(this.browserBinding);
+    } catch (err) {
+      console.warn("Failed to launch Puppeteer session initially. Attempting to clear stale sessions and retry...", err instanceof Error ? err.message : String(err));
+      
+      try {
+        const res = await this.browserBinding.fetch("http://default-host/v1/sessions");
+        if (res.ok) {
+          const data = await res.json() as { sessions?: Array<{ sessionId?: string; id?: string }> };
+          const sessions = data.sessions || [];
+          console.log(`Found ${sessions.length} active sessions to clear.`);
+          for (const s of sessions) {
+            const sessionId = s.sessionId || s.id;
+            if (sessionId) {
+              console.log(`Closing stale session: ${sessionId}`);
+              const delRes = await this.browserBinding.fetch(`http://default-host/v1/devtools/browser/${sessionId}`, { method: "DELETE" });
+              const delText = await delRes.text();
+              console.log(`Delete response for ${sessionId}: status=${delRes.status}, body=${delText}`);
+            } else {
+              console.warn("Stale session has no sessionId or id:", JSON.stringify(s));
+            }
+          }
+          if (sessions.length > 0) {
+            console.log("Waiting 2 seconds for sessions to close on Cloudflare...");
+            await new Promise((resolve) => setTimeout(resolve, 2000));
+          }
+        }
+      } catch (clearErr) {
+        console.error("Failed to clear stale sessions:", clearErr);
+      }
+
+      console.log("Retrying launch after clearing stale sessions...");
+      this.browser = await puppeteer.launch(this.browserBinding);
+    }
+
     this.page = await this.browser.newPage();
     await this.page.setViewport({ width: 1280, height: 720 });
     // Increase default timeout
