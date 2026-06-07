@@ -240,7 +240,7 @@ describe('Worker Default Export', () => {
     };
 
     const puppeteerMock = await import('@cloudflare/puppeteer').then(m => m.default);
-    puppeteerMock.limits.mockResolvedValueOnce({
+    (puppeteerMock.limits as any).mockResolvedValueOnce({
       activeSessions: [],
       maxConcurrentSessions: 4,
       allowedBrowserAcquisitions: 1,
