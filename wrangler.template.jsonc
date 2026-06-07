@@ -28,7 +28,11 @@
     }
   ],
   "vars": {
-    "SHOP_URL": "https://fintechnick.com/shop"
+    "SHOP_URL": "https://fintechnick.com/shop",
+    "STRIPE_TEST_CARD": "4242424242424242",
+    "STRIPE_TEST_EXPIRY": "12/28",
+    "STRIPE_TEST_CVC": "123",
+    "STRIPE_TEST_NAME": "Stripe Test User"
   },
   "observability": {
     "logs": {
