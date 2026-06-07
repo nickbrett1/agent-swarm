@@ -30,7 +30,7 @@ describe('PuppeteerBrowserHelper', () => {
 
     await helper.init();
 
-    expect(puppeteer.launch).toHaveBeenCalledWith(mockBrowserBinding);
+    expect(puppeteer.launch).toHaveBeenCalledWith(mockBrowserBinding, { keep_alive: 10000 });
     expect(mockBrowser.newPage).toHaveBeenCalled();
     expect(mockPage.setViewport).toHaveBeenCalledWith({ width: 1280, height: 720 });
     expect(mockPage.setDefaultTimeout).toHaveBeenCalledWith(15000);

@@ -34,41 +34,70 @@ export class PuppeteerBrowserHelper {
 
   constructor(private browserBinding: BrowserWorker) {}
 
+  private async clearStaleSessions(): Promise<number> {
+    console.log("clearStaleSessions check: browserBinding =", !!this.browserBinding, "fetch type =", this.browserBinding ? typeof this.browserBinding.fetch : "undefined");
+    if (!this.browserBinding || typeof this.browserBinding.fetch !== 'function') {
+      return 0;
+    }
+    try {
+      try {
+        const limits = await puppeteer.limits(this.browserBinding);
+        console.log("clearStaleSessions: Cloudflare limits:", JSON.stringify(limits));
+      } catch (limitsErr) {
+        console.warn("clearStaleSessions: Failed to fetch limits:", limitsErr instanceof Error ? limitsErr.message : String(limitsErr));
+      }
+
+      console.log("clearStaleSessions: Querying active sessions using puppeteer.sessions...");
+      const sessions = await puppeteer.sessions(this.browserBinding);
+      console.log(`clearStaleSessions: Active sessions response:`, JSON.stringify(sessions));
+      if (!sessions || sessions.length === 0) {
+        return 0;
+      }
+      let clearedCount = 0;
+      for (const s of sessions) {
+        const sessionId = s.sessionId || (s as any).id;
+        if (sessionId) {
+          console.log(`Closing stale session: ${sessionId}`);
+          const delRes = await this.browserBinding.fetch(`https://fake.host/v1/devtools/browser/${sessionId}`, {
+            method: "DELETE",
+          });
+          const delText = await delRes.text();
+          console.log(`Delete response for ${sessionId}: status=${delRes.status}, body=${delText}`);
+          clearedCount++;
+        } else {
+          console.warn("Stale session has no sessionId or id:", JSON.stringify(s));
+        }
+      }
+      return clearedCount;
+    } catch (clearErr) {
+      console.error("Failed to clear stale sessions:", clearErr);
+    }
+    return 0;
+  }
+
   async init(): Promise<void> {
     console.log("Launching Cloudflare Browser Rendering session...");
+
+    // Proactively clear stale sessions to avoid 429 concurrency limit
+    const cleared = await this.clearStaleSessions();
+    if (cleared > 0) {
+      console.log("Waiting 10 seconds for sessions to close on Cloudflare...");
+      await new Promise((resolve) => setTimeout(resolve, 10000));
+    }
+
     try {
-      this.browser = await puppeteer.launch(this.browserBinding);
+      this.browser = await puppeteer.launch(this.browserBinding, { keep_alive: 10000 });
     } catch (err) {
       console.warn("Failed to launch Puppeteer session initially. Attempting to clear stale sessions and retry...", err instanceof Error ? err.message : String(err));
-      
-      try {
-        const res = await this.browserBinding.fetch("http://default-host/v1/sessions");
-        if (res.ok) {
-          const data = await res.json() as { sessions?: Array<{ sessionId?: string; id?: string }> };
-          const sessions = data.sessions || [];
-          console.log(`Found ${sessions.length} active sessions to clear.`);
-          for (const s of sessions) {
-            const sessionId = s.sessionId || s.id;
-            if (sessionId) {
-              console.log(`Closing stale session: ${sessionId}`);
-              const delRes = await this.browserBinding.fetch(`http://default-host/v1/devtools/browser/${sessionId}`, { method: "DELETE" });
-              const delText = await delRes.text();
-              console.log(`Delete response for ${sessionId}: status=${delRes.status}, body=${delText}`);
-            } else {
-              console.warn("Stale session has no sessionId or id:", JSON.stringify(s));
-            }
-          }
-          if (sessions.length > 0) {
-            console.log("Waiting 2 seconds for sessions to close on Cloudflare...");
-            await new Promise((resolve) => setTimeout(resolve, 2000));
-          }
-        }
-      } catch (clearErr) {
-        console.error("Failed to clear stale sessions:", clearErr);
+
+      const retryCleared = await this.clearStaleSessions();
+      if (retryCleared > 0) {
+        console.log("Waiting 10 seconds for sessions to close on Cloudflare before retry...");
+        await new Promise((resolve) => setTimeout(resolve, 10000));
       }
 
       console.log("Retrying launch after clearing stale sessions...");
-      this.browser = await puppeteer.launch(this.browserBinding);
+      this.browser = await puppeteer.launch(this.browserBinding, { keep_alive: 10000 });
     }
 
     this.page = await this.browser.newPage();
