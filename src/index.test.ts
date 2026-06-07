@@ -186,8 +186,7 @@ describe('Worker Default Export', () => {
     const data = await res.json() as any;
     expect(data.name).toBe('agent-swarm');
     expect(data.agents.ShopperAgent).toBeDefined();
-    expect(data.limits).toBeDefined();
-    expect(data.limits.browser.configured).toBe(false);
+    expect(data.limits).toBeUndefined();
   });
 
   it('should return 204 on OPTIONS preflight', async () => {
