@@ -506,7 +506,8 @@ export default {
             activeSessionsCount: limits.activeSessions ? limits.activeSessions.length : 0,
             allowedBrowserAcquisitions: limits.allowedBrowserAcquisitions,
             timeUntilNextAcquisition: limits.timeUntilNextAllowedBrowserAcquisition,
-            usedBrowserTimeSeconds: (limits as any).usedBrowserTimeSeconds || 0
+            usedBrowserTimeSeconds: (limits as any).usedBrowserTimeSeconds || 0,
+            browserTimeSecondsLimit: (limits as any).browserTimeSecondsLimit
           };
         } catch (err) {
           browserLimits = {
