@@ -500,6 +500,7 @@ export default {
         try {
           const limits = await puppeteer.limits(env.MYBROWSER);
           browserLimits = {
+            ...(limits as any),
             configured: true,
             maxConcurrentSessions: limits.maxConcurrentSessions,
             activeSessionsCount: limits.activeSessions ? limits.activeSessions.length : 0,
