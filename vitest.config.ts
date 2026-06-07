@@ -9,6 +9,7 @@ export default defineConfig({
       reporter: ['text', 'json', 'html'],
       include: ['src/**/*.ts'],
       exclude: ['src/**/*.test.ts']
-    }
+    },
+    reporters: ['default', 'junit', './scripts/shared-reporter.js']
   }
 });
