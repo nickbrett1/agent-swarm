@@ -67,6 +67,11 @@ sudo chown -R "$CURRENT_USER:$CURRENT_USER" "$USER_HOME_DIR/.agy"
 echo "Setup bridget to access Chrome DevTools Protocol over a secure tunnel..."
 socat TCP-LISTEN:9222,fork,bind=127.0.0.1 TCP:host.docker.internal:9222 &
 
+echo "INFO: Configuring git pre-commit hook..."
+mkdir -p /workspaces/agent-swarm/.git/hooks
+printf '#!/bin/sh\npython3 scripts/check-secrets.py\n' > /workspaces/agent-swarm/.git/hooks/pre-commit
+chmod +x /workspaces/agent-swarm/.git/hooks/pre-commit
+
 echo -e "\nINFO: Custom container setup script finished."
 echo -e "\n⚠️  To complete cloud login, run:"
 echo "    cd /workspaces/agent-swarm && bash scripts/cloud_login.sh"

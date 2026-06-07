@@ -1,9 +1,9 @@
 import { Agent, routeAgentRequest, callable } from "agents";
 import { PuppeteerBrowserHelper } from "./browser.js";
-import type { BrowserWorker } from "@cloudflare/puppeteer";
+import puppeteer, { BrowserWorker } from "@cloudflare/puppeteer";
 import type { Ai } from "@cloudflare/workers-types";
 
-const agentCallable = callable as Function;
+const agentCallable = callable as (...args: any[]) => any;
 
 export interface Env {
   MYBROWSER: BrowserWorker;
@@ -493,12 +493,88 @@ export default {
       });
     }
 
-    // 2. Serve public API metadata without requiring signatures
+    // 2. Serve public API limits/usage data without requiring signatures
+    if (url.pathname === "/limits" || url.pathname === "/usage") {
+      let browserLimits: any = { configured: false };
+      if (env.MYBROWSER) {
+        try {
+          const limits = await puppeteer.limits(env.MYBROWSER);
+          browserLimits = {
+            configured: true,
+            maxConcurrentSessions: limits.maxConcurrentSessions,
+            activeSessionsCount: limits.activeSessions ? limits.activeSessions.length : 0,
+            allowedBrowserAcquisitions: limits.allowedBrowserAcquisitions,
+            timeUntilNextAcquisition: limits.timeUntilNextAllowedBrowserAcquisition,
+            usedBrowserTimeSeconds: (limits as any).usedBrowserTimeSeconds || 0
+          };
+        } catch (err) {
+          browserLimits = {
+            configured: true,
+            error: err instanceof Error ? err.message : String(err)
+          };
+        }
+      }
+
+      const limitsResponse = {
+        browser: browserLimits,
+        ai: {
+          configured: !!env.AI,
+          model: "@cf/meta/llama-3.1-8b-instruct"
+        },
+        gemini: {
+          configured: !!(env.GOOGLE_API_KEY || env.GEMINI_API_KEY),
+          model: "gemini-2.0-flash"
+        }
+      };
+
+      return new Response(JSON.stringify(limitsResponse, null, 2), {
+        status: 200,
+        headers: {
+          "Content-Type": "application/json",
+          "Access-Control-Allow-Origin": "*",
+          "Access-Control-Allow-Methods": "GET, OPTIONS",
+          "Access-Control-Allow-Headers": "Content-Type"
+        }
+      });
+    }
+
+    // 3. Serve public API metadata and current usage limits without requiring signatures
     if (url.pathname === "/info" || url.pathname === "/inspect") {
+      let browserLimits: any = { configured: false };
+      if (env.MYBROWSER) {
+        try {
+          const limits = await puppeteer.limits(env.MYBROWSER);
+          browserLimits = {
+            configured: true,
+            maxConcurrentSessions: limits.maxConcurrentSessions,
+            activeSessionsCount: limits.activeSessions ? limits.activeSessions.length : 0,
+            allowedBrowserAcquisitions: limits.allowedBrowserAcquisitions,
+            timeUntilNextAcquisition: limits.timeUntilNextAllowedBrowserAcquisition,
+            usedBrowserTimeSeconds: (limits as any).usedBrowserTimeSeconds || 0
+          };
+        } catch (err) {
+          browserLimits = {
+            configured: true,
+            error: err instanceof Error ? err.message : String(err)
+          };
+        }
+      }
+
       const info = {
         name: "agent-swarm",
         description: "Autonomous browser rendering swarm that runs stateful agent sessions.",
         version: "0.1.0",
+        limits: {
+          browser: browserLimits,
+          ai: {
+            configured: !!env.AI,
+            model: "@cf/meta/llama-3.1-8b-instruct"
+          },
+          gemini: {
+            configured: !!(env.GOOGLE_API_KEY || env.GEMINI_API_KEY),
+            model: "gemini-2.0-flash"
+          }
+        },
         agents: {
           ShopperAgent: {
             description: "Launches a browser rendering session to browse, search, and purchase products in Stripe test-mode.",
@@ -541,7 +617,7 @@ export default {
       });
     }
 
-    // 3. Verify access signature if secret is configured
+    // 4. Verify access signature if secret is configured
     const expiry = url.searchParams.get("expiry");
     const signature = url.searchParams.get("signature");
     

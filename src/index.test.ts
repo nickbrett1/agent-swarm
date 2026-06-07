@@ -1,6 +1,18 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import workerDefault, { ShopperAgent } from './index.js';
 
+vi.mock('@cloudflare/puppeteer', () => ({
+  default: {
+    limits: vi.fn().mockResolvedValue({
+      activeSessions: [],
+      maxConcurrentSessions: 4,
+      allowedBrowserAcquisitions: 1,
+      timeUntilNextAllowedBrowserAcquisition: 0,
+      usedBrowserTimeSeconds: 0,
+    }),
+  },
+}));
+
 // Mock the agents module so that extending Agent doesn't try to invoke cloudflare native bindings
 vi.mock('agents', () => ({
   Agent: class {
@@ -174,6 +186,8 @@ describe('Worker Default Export', () => {
     const data = await res.json() as any;
     expect(data.name).toBe('agent-swarm');
     expect(data.agents.ShopperAgent).toBeDefined();
+    expect(data.limits).toBeDefined();
+    expect(data.limits.browser.configured).toBe(false);
   });
 
   it('should return 204 on OPTIONS preflight', async () => {
@@ -182,5 +196,38 @@ describe('Worker Default Export', () => {
     const res = await workerDefault.fetch(req, env as any);
     expect(res.status).toBe(204);
     expect(res.headers.get('Access-Control-Allow-Origin')).toBe('*');
+  });
+
+  it('should return limits on /limits', async () => {
+    const req = new Request('http://localhost/limits');
+    const env = {
+      AI: {},
+      GOOGLE_API_KEY: 'test-api-key',
+    };
+    const res = await workerDefault.fetch(req, env as any);
+    expect(res.status).toBe(200);
+    const data = await res.json() as any;
+    expect(data.browser.configured).toBe(false);
+    expect(data.ai.configured).toBe(true);
+    expect(data.gemini.configured).toBe(true);
+  });
+
+  it('should query browser limits on /limits when MYBROWSER is present', async () => {
+    const req = new Request('http://localhost/limits');
+    const mockBrowserWorker = {};
+    const env = {
+      MYBROWSER: mockBrowserWorker,
+    };
+    
+    // Dynamically mock/import to get mock limits
+    const puppeteerMock = await import('@cloudflare/puppeteer').then(m => m.default);
+    
+    const res = await workerDefault.fetch(req, env as any);
+    expect(res.status).toBe(200);
+    const data = await res.json() as any;
+    expect(data.browser.configured).toBe(true);
+    expect(data.browser.maxConcurrentSessions).toBe(4);
+    expect(data.browser.usedBrowserTimeSeconds).toBe(0);
+    expect(puppeteerMock.limits).toHaveBeenCalledWith(mockBrowserWorker);
   });
 });

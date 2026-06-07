@@ -55,7 +55,7 @@ export class PuppeteerBrowserHelper {
       }
       let clearedCount = 0;
       for (const s of sessions) {
-        const sessionId = s.sessionId || (s as any).id;
+        const sessionId = s.sessionId || (s as { id?: string }).id;
         if (sessionId) {
           console.log(`Closing stale session: ${sessionId}`);
           const delRes = await this.browserBinding.fetch(`https://fake.host/v1/devtools/browser/${sessionId}`, {
@@ -84,7 +84,7 @@ export class PuppeteerBrowserHelper {
         console.log("Checking for existing active sessions to reuse...");
         const sessions = await puppeteer.sessions(this.browserBinding);
         if (sessions && sessions.length > 0) {
-          const sessionId = sessions[0].sessionId || (sessions[0] as any).id;
+          const sessionId = sessions[0].sessionId || (sessions[0] as { id?: string }).id;
           if (sessionId) {
             console.log(`Attempting to connect to existing session: ${sessionId}`);
             this.browser = await puppeteer.connect(this.browserBinding, sessionId);
