@@ -9,7 +9,8 @@
     "dev": "./scripts/run-wrangler-dev.sh",
     "deploy": "wrangler deploy",
     "config": "./scripts/setup-wrangler-config.sh",
-    "test": "vitest run --coverage"
+    "test": "vitest run --coverage",
+    "test:once": "npx vitest run --changed"
   },
   "dependencies": {
     "@cloudflare/puppeteer": "latest",
