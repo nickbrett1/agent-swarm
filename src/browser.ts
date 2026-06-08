@@ -358,11 +358,16 @@ export class PuppeteerBrowserHelper {
       console.warn(`Element ID ${id} not found in map`);
       return null;
     }
-    const elements = await this.page.$$(`xpath/${xpath}`);
-    return {
-      element: elements.length > 0 ? elements[0] : null,
-      xpath
-    };
+    try {
+      const elements = await this.page.$$(`xpath/${xpath}`);
+      return {
+        element: elements.length > 0 ? elements[0] : null,
+        xpath
+      };
+    } catch (err) {
+      console.warn(`Error querying element ${id} with xpath ${xpath}:`, err instanceof Error ? err.message : String(err));
+      return null;
+    }
   }
 
   /**

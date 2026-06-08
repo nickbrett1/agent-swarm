@@ -362,6 +362,70 @@ describe('PuppeteerBrowserHelper', () => {
     await expect(helper.typeElement('some_id', 'test')).rejects.toThrow('Browser not initialized');
   });
 
+  it('should handle detached frame error in clickElement and return false', async () => {
+    const mockEvaluate = vi.fn().mockResolvedValue([
+      { tag: 'button', type: '', text: 'Submit', placeholder: '', name: '', role: '', xpath: '//button' }
+    ]);
+    const mockUrl = vi.fn().mockReturnValue('http://example.com');
+    const mockPage = {
+      setViewport: vi.fn(),
+      setDefaultTimeout: vi.fn(),
+      evaluate: mockEvaluate,
+      url: mockUrl,
+      $$: vi.fn().mockRejectedValue(new Error("Attempted to use detached Frame 'some_frame_id'")),
+    };
+    const mockBrowser = {
+      newPage: vi.fn().mockResolvedValue(mockPage),
+    };
+    (puppeteer.launch as any).mockResolvedValue(mockBrowser);
+
+    await helper.init();
+    await helper.getInteractiveElements(); // Populate elementsMap
+
+    const consoleSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const result = await helper.clickElement('button_0');
+
+    expect(result).toBe(false);
+    const targetCall = consoleSpy.mock.calls.find(call => 
+      call[0] && String(call[0]).includes('Error querying element button_0 with xpath //button:')
+    );
+    expect(targetCall).toBeDefined();
+    expect(String(targetCall![1])).toContain("Attempted to use detached Frame");
+    consoleSpy.mockRestore();
+  });
+
+  it('should handle detached frame error in typeElement and return false', async () => {
+    const mockEvaluate = vi.fn().mockResolvedValue([
+      { tag: 'input', type: 'text', text: '', placeholder: '', name: '', role: '', xpath: '//input' }
+    ]);
+    const mockUrl = vi.fn().mockReturnValue('http://example.com');
+    const mockPage = {
+      setViewport: vi.fn(),
+      setDefaultTimeout: vi.fn(),
+      evaluate: mockEvaluate,
+      url: mockUrl,
+      $$: vi.fn().mockRejectedValue(new Error("Attempted to use detached Frame 'some_frame_id'")),
+    };
+    const mockBrowser = {
+      newPage: vi.fn().mockResolvedValue(mockPage),
+    };
+    (puppeteer.launch as any).mockResolvedValue(mockBrowser);
+
+    await helper.init();
+    await helper.getInteractiveElements(); // Populate elementsMap
+
+    const consoleSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const result = await helper.typeElement('input_0', 'test value');
+
+    expect(result).toBe(false);
+    const targetCall = consoleSpy.mock.calls.find(call => 
+      call[0] && String(call[0]).includes('Error querying element input_0 with xpath //input:')
+    );
+    expect(targetCall).toBeDefined();
+    expect(String(targetCall![1])).toContain("Attempted to use detached Frame");
+    consoleSpy.mockRestore();
+  });
+
   it('should wait correctly', async () => {
     const start = Date.now();
     await helper.wait(100);
