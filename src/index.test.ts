@@ -232,7 +232,7 @@ describe('Worker Default Export', () => {
     expect(puppeteerMock.limits).toHaveBeenCalledWith(mockBrowserWorker);
   });
 
-  it('should fallback to unlimited when browserTimeSecondsLimit is undefined', async () => {
+  it('should fallback to 600 for free tier when browserTimeSecondsLimit is undefined', async () => {
     const req = new Request('http://localhost/limits');
     const mockBrowserWorker = {};
     const env = {
@@ -254,6 +254,46 @@ describe('Worker Default Export', () => {
     const data = await res.json() as any;
     expect(data.browser.configured).toBe(true);
     expect(data.browser.usedBrowserTimeSeconds).toBe(50);
+    expect(data.browser.browserTimeSecondsLimit).toBe(600);
+  });
+
+  it('should fallback to unlimited for paid tier when browserTimeSecondsLimit is undefined', async () => {
+    const req = new Request('http://localhost/limits');
+    const mockBrowserWorker = {};
+    const env = {
+      MYBROWSER: mockBrowserWorker,
+    };
+
+    const puppeteerMock = await import('@cloudflare/puppeteer').then(m => m.default);
+    (puppeteerMock.limits as any).mockResolvedValueOnce({
+      activeSessions: [],
+      maxConcurrentSessions: 120,
+      allowedBrowserAcquisitions: 1,
+      timeUntilNextAllowedBrowserAcquisition: 0,
+      usedBrowserTimeSeconds: 50,
+      // browserTimeSecondsLimit is omitted
+    });
+
+    const res = await workerDefault.fetch(req, env as any);
+    expect(res.status).toBe(200);
+    const data = await res.json() as any;
+    expect(data.browser.configured).toBe(true);
+    expect(data.browser.usedBrowserTimeSeconds).toBe(50);
     expect(data.browser.browserTimeSecondsLimit).toBe('unlimited');
+  });
+
+  it('should use BROWSER_TIME_LIMIT_MOCK when defined in env', async () => {
+    const req = new Request('http://localhost/limits');
+    const mockBrowserWorker = {};
+    const env = {
+      MYBROWSER: mockBrowserWorker,
+      BROWSER_TIME_LIMIT_MOCK: 600,
+    };
+
+    const res = await workerDefault.fetch(req, env as any);
+    expect(res.status).toBe(200);
+    const data = await res.json() as any;
+    expect(data.browser.configured).toBe(true);
+    expect(data.browser.browserTimeSecondsLimit).toBe(600);
   });
 });

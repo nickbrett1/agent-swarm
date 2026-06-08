@@ -16,6 +16,7 @@ export interface Env {
   STRIPE_TEST_CVC?: string;
   STRIPE_TEST_NAME?: string;
   AGENT_SWARM_SECRET?: string;
+  BROWSER_TIME_LIMIT_MOCK?: string | number;
 }
 
 export interface ShopperState {
@@ -507,7 +508,11 @@ export default {
             allowedBrowserAcquisitions: limits.allowedBrowserAcquisitions,
             timeUntilNextAcquisition: limits.timeUntilNextAllowedBrowserAcquisition,
             usedBrowserTimeSeconds: (limits as any).usedBrowserTimeSeconds || 0,
-            browserTimeSecondsLimit: (limits as any).browserTimeSecondsLimit !== undefined ? (limits as any).browserTimeSecondsLimit : "unlimited"
+            browserTimeSecondsLimit: env.BROWSER_TIME_LIMIT_MOCK !== undefined ? 
+              Number(env.BROWSER_TIME_LIMIT_MOCK) : 
+              ((limits as any).browserTimeSecondsLimit !== undefined ? 
+                (limits as any).browserTimeSecondsLimit : 
+                ((limits.maxConcurrentSessions || 1) >= 10 ? "unlimited" : 600))
           };
         } catch (err) {
           browserLimits = {
