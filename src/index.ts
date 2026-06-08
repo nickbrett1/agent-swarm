@@ -527,12 +527,12 @@ export default {
         primary_llm: {
           configured: !!env.AI,
           model: "@cf/meta/llama-3.1-8b-instruct",
-          limits: "unlimited"
+          usage_dashboard: "https://dash.cloudflare.com/?to=/:account/ai/ai-gateway"
         },
         secondary_llm: {
           configured: !!(env.GOOGLE_API_KEY || env.GEMINI_API_KEY),
           model: "gemini-2.0-flash",
-          limits: "Google API quotas apply"
+          usage_dashboard: "https://dash.cloudflare.com/?to=/:account/ai/ai-gateway"
         }
       };
 
