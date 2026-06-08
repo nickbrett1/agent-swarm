@@ -1,5 +1,8 @@
 # Cloudflare Agent Swarm
 
+[![CircleCI](https://dl.circleci.com/status-badge/img/gh/nickbrett1/agent-swarm/tree/main.svg?style=svg)](https://dl.circleci.com/status-badge/redirect/gh/nickbrett1/agent-swarm/tree/main)
+[![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=nickbrett1_agent-swarm&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=nickbrett1_agent-swarm)
+
 An autonomous shopping agent system built with Cloudflare Workers AI, TypeScript, and Cloudflare Agents SDK.
 
 ## Documentation
