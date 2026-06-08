@@ -400,6 +400,10 @@ ${textSummary}
           { role: "system", content: systemPrompt },
           { role: "user", content: userPrompt }
         ]
+      }, {
+        gateway: {
+          id: "default"
+        }
       });
 
       const aiResponse = response as Record<string, unknown>;

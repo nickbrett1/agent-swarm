@@ -92,6 +92,11 @@ describe('ShopperAgent queryLLM Fallback Logic', () => {
     // Gemini retries 3 times before failing
     expect(mockFetch).toHaveBeenCalledTimes(3);
     expect(mockRun).toHaveBeenCalledTimes(1);
+    expect(mockRun).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.any(Object),
+      { gateway: { id: 'default' } }
+    );
   });
 
   it('should query Workers AI directly when no GOOGLE_API_KEY is present', async () => {
@@ -109,6 +114,11 @@ describe('ShopperAgent queryLLM Fallback Logic', () => {
     expect(response.explanation).toBe('direct Workers AI');
     expect(mockFetch).not.toHaveBeenCalled();
     expect(mockRun).toHaveBeenCalledTimes(1);
+    expect(mockRun).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.any(Object),
+      { gateway: { id: 'default' } }
+    );
   });
 
   it('should correctly strip markdown formatting from Workers AI response', async () => {
