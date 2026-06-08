@@ -524,13 +524,15 @@ export default {
 
       const limitsResponse = {
         browser: browserLimits,
-        ai: {
+        primary_llm: {
           configured: !!env.AI,
-          model: "@cf/meta/llama-3.1-8b-instruct"
+          model: "@cf/meta/llama-3.1-8b-instruct",
+          usage_dashboard: "https://dash.cloudflare.com/?to=/:account/ai/ai-gateway"
         },
-        gemini: {
+        secondary_llm: {
           configured: !!(env.GOOGLE_API_KEY || env.GEMINI_API_KEY),
-          model: "gemini-2.0-flash"
+          model: "gemini-2.0-flash",
+          usage_dashboard: "https://dash.cloudflare.com/?to=/:account/ai/ai-gateway"
         }
       };
 
