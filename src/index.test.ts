@@ -208,8 +208,8 @@ describe('Worker Default Export', () => {
     expect(res.status).toBe(200);
     const data = await res.json() as any;
     expect(data.browser.configured).toBe(false);
-    expect(data.ai.configured).toBe(true);
-    expect(data.gemini.configured).toBe(true);
+    expect(data.primary_llm.configured).toBe(true);
+    expect(data.secondary_llm.configured).toBe(true);
   });
 
   it('should query browser limits on /limits when MYBROWSER is present', async () => {

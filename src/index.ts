@@ -524,13 +524,15 @@ export default {
 
       const limitsResponse = {
         browser: browserLimits,
-        ai: {
+        primary_llm: {
           configured: !!env.AI,
-          model: "@cf/meta/llama-3.1-8b-instruct"
+          model: "@cf/meta/llama-3.1-8b-instruct",
+          limits: "unlimited"
         },
-        gemini: {
+        secondary_llm: {
           configured: !!(env.GOOGLE_API_KEY || env.GEMINI_API_KEY),
-          model: "gemini-2.0-flash"
+          model: "gemini-2.0-flash",
+          limits: "Google API quotas apply"
         }
       };
 
