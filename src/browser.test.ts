@@ -192,67 +192,44 @@ function setupMockBrowser(pageOverrides: any = {}, browserOverrides: any = {}) {
     expect(typeResult).toBe(false);
   });
 
-  it('should click element successfully using xpath query', async () => {
-    const mockEvaluate = vi.fn().mockResolvedValue([
-      { tag: 'button', type: '', text: 'Submit', placeholder: '', name: '', role: '', xpath: '//button' }
-    ]);
-    const mockUrl = vi.fn().mockReturnValue('http://example.com');
-    const mockClick = vi.fn();
-    const mockScrollIntoView = vi.fn();
-    const { mockPage } = setupMockBrowser({ evaluate: mockEvaluate, url: mockUrl, '$$': vi.fn().mockResolvedValue([{ scrollIntoView: mockScrollIntoView, click: mockClick }]) });
 
-    await helper.init();
-    await helper.getInteractiveElements(); // Populate elementsMap
-    const result = await helper.clickElement('button_0');
-
-    expect(mockPage.$$).toHaveBeenCalledWith('xpath///button');
-    expect(mockScrollIntoView).toHaveBeenCalled();
-    expect(mockClick).toHaveBeenCalled();
-    expect(result).toBe(true);
-  });
-
-  it('should type element successfully', async () => {
-    const mockEvaluate = vi.fn().mockResolvedValue([
-      { tag: 'input', type: 'text', text: '', placeholder: '', name: '', role: '', xpath: '//input' }
-    ]);
-    const mockUrl = vi.fn().mockReturnValue('http://example.com');
-    const mockType = vi.fn();
+  function setupInteractionMock(typeFn: any = vi.fn(), tag = 'input') {
+    const mockEvaluate = vi.fn().mockResolvedValue([{ tag, type: 'text', text: '', placeholder: '', name: '', role: '', xpath: `//${tag}` }]);
     const mockClick = vi.fn();
     const mockScrollIntoView = vi.fn();
     const mockPress = vi.fn();
-    const { mockPage } = setupMockBrowser({ evaluate: mockEvaluate, url: mockUrl, '$$': vi.fn().mockResolvedValue([{ scrollIntoView: mockScrollIntoView, click: mockClick, type: mockType }]), keyboard: { press: mockPress } });
+    const { mockPage } = setupMockBrowser({ evaluate: mockEvaluate, url: vi.fn().mockReturnValue('http://example.com'), '$$': vi.fn().mockResolvedValue([{ scrollIntoView: mockScrollIntoView, click: mockClick, type: typeFn }]), keyboard: { press: mockPress } });
+    return { mockPage, mockClick, mockScrollIntoView, mockPress, typeFn };
+  }
 
+  it('should click element successfully using xpath query', async () => {
+    const { mockPage, mockScrollIntoView, mockClick } = setupInteractionMock(vi.fn(), 'button');
     await helper.init();
-    await helper.getInteractiveElements(); // Populate elementsMap
-    const result = await helper.typeElement('input_0', 'test value');
+    await helper.getInteractiveElements();
+    expect(await helper.clickElement('button_0')).toBe(true);
+    expect(mockPage.$$).toHaveBeenCalledWith('xpath///button');
+    expect(mockScrollIntoView).toHaveBeenCalled();
+    expect(mockClick).toHaveBeenCalled();
+  });
 
+  it('should type element successfully', async () => {
+    const { mockPage, mockScrollIntoView, mockClick, mockPress, typeFn } = setupInteractionMock();
+    await helper.init();
+    await helper.getInteractiveElements();
+    expect(await helper.typeElement('input_0', 'test value')).toBe(true);
     expect(mockPage.$$).toHaveBeenCalledWith('xpath///input');
     expect(mockScrollIntoView).toHaveBeenCalled();
     expect(mockClick).toHaveBeenCalledWith({ clickCount: 3 });
     expect(mockPress).toHaveBeenCalledWith('Backspace');
-    expect(mockType).toHaveBeenCalledWith('test value');
-    expect(result).toBe(true);
+    expect(typeFn).toHaveBeenCalledWith('test value');
   });
 
-
   it('should handle errors in typeElement and return false', async () => {
-    const mockEvaluate = vi.fn().mockResolvedValue([
-      { tag: 'input', type: 'text', text: '', placeholder: '', name: '', role: '', xpath: '//input' }
-    ]);
-    const mockUrl = vi.fn().mockReturnValue('http://example.com');
-    const mockType = vi.fn().mockRejectedValue(new Error('Typing failed'));
-    const mockClick = vi.fn();
-    const mockScrollIntoView = vi.fn();
-    const mockPress = vi.fn();
-    const { mockPage } = setupMockBrowser({ evaluate: mockEvaluate, url: mockUrl, '$$': vi.fn().mockResolvedValue([{ scrollIntoView: mockScrollIntoView, click: mockClick, type: mockType }]), keyboard: { press: mockPress } });
-
+    setupInteractionMock(vi.fn().mockRejectedValue(new Error('Typing failed')));
     await helper.init();
-    await helper.getInteractiveElements(); // Populate elementsMap
-
+    await helper.getInteractiveElements();
     const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-    const result = await helper.typeElement('input_0', 'test value');
-
-    expect(result).toBe(false);
+    expect(await helper.typeElement('input_0', 'test value')).toBe(false);
     expect(consoleSpy).toHaveBeenCalledWith('Error typing into element input_0:', expect.any(Error));
     consoleSpy.mockRestore();
   });
