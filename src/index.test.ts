@@ -189,6 +189,12 @@ describe('ShopperAgent queryLLM Fallback Logic', () => {
 });
 
 describe('Worker Default Export', () => {
+  async function setupMockLimits(limitsObj: any) {
+    const puppeteerMock = await import('@cloudflare/puppeteer').then(m => m.default);
+    (puppeteerMock.limits as any).mockResolvedValueOnce(limitsObj);
+    return puppeteerMock;
+  }
+
   it('should return info on /info', async () => {
     const req = new Request('http://localhost/info');
     const env = {};
@@ -249,14 +255,12 @@ describe('Worker Default Export', () => {
       MYBROWSER: mockBrowserWorker,
     };
 
-    const puppeteerMock = await import('@cloudflare/puppeteer').then(m => m.default);
-    (puppeteerMock.limits as any).mockResolvedValueOnce({
+    await setupMockLimits({
       activeSessions: [],
       maxConcurrentSessions: 4,
       allowedBrowserAcquisitions: 1,
       timeUntilNextAllowedBrowserAcquisition: 0,
       usedBrowserTimeSeconds: 50,
-      // browserTimeSecondsLimit is omitted
     });
 
     const res = await workerDefault.fetch(req, env as any);
@@ -274,14 +278,12 @@ describe('Worker Default Export', () => {
       MYBROWSER: mockBrowserWorker,
     };
 
-    const puppeteerMock = await import('@cloudflare/puppeteer').then(m => m.default);
-    (puppeteerMock.limits as any).mockResolvedValueOnce({
+    await setupMockLimits({
       activeSessions: [],
       maxConcurrentSessions: 120,
       allowedBrowserAcquisitions: 1,
       timeUntilNextAllowedBrowserAcquisition: 0,
       usedBrowserTimeSeconds: 50,
-      // browserTimeSecondsLimit is omitted
     });
 
     const res = await workerDefault.fetch(req, env as any);
