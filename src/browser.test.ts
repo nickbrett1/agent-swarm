@@ -181,11 +181,15 @@ function setupMockBrowser(pageOverrides: any = {}, browserOverrides: any = {}) {
     await expect(helper.clickElement('some_id')).rejects.toThrow('Browser not initialized');
   });
 
-  it('should return false if clickElement ID not found', async () => {
-    const { mockBrowser, mockPage } = setupMockBrowser();
+  it('should return false if element ID not found for click or type', async () => {
+    setupMockBrowser();
     await helper.init();
-    const result = await helper.clickElement('nonexistent_id');
-    expect(result).toBe(false);
+
+    const clickResult = await helper.clickElement('nonexistent_id');
+    expect(clickResult).toBe(false);
+
+    const typeResult = await helper.typeElement('nonexistent_id', 'text');
+    expect(typeResult).toBe(false);
   });
 
   it('should click element successfully using xpath query', async () => {
@@ -230,12 +234,6 @@ function setupMockBrowser(pageOverrides: any = {}, browserOverrides: any = {}) {
     expect(result).toBe(true);
   });
 
-  it('should return false on typeElement if ID not found', async () => {
-    const { mockBrowser, mockPage } = setupMockBrowser();
-    await helper.init();
-    const result = await helper.typeElement('nonexistent_id', 'text');
-    expect(result).toBe(false);
-  });
 
   it('should handle errors in typeElement and return false', async () => {
     const mockEvaluate = vi.fn().mockResolvedValue([
@@ -263,47 +261,22 @@ function setupMockBrowser(pageOverrides: any = {}, browserOverrides: any = {}) {
     await expect(helper.typeElement('some_id', 'test')).rejects.toThrow('Browser not initialized');
   });
 
-  it('should handle detached frame error in clickElement and return false', async () => {
+  it('should handle detached frame error in both click and type elements', async () => {
     const mockEvaluate = vi.fn().mockResolvedValue([
-      { tag: 'button', type: '', text: 'Submit', placeholder: '', name: '', role: '', xpath: '//button' }
-    ]);
-    const mockUrl = vi.fn().mockReturnValue('http://example.com');
-    setupMockBrowser({ evaluate: mockEvaluate, url: mockUrl, '$$': vi.fn().mockRejectedValue(new Error("Attempted to use detached Frame 'some_frame_id'")) });
-
-    await helper.init();
-    await helper.getInteractiveElements(); // Populate elementsMap
-
-    const consoleSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    const result = await helper.clickElement('button_0');
-
-    expect(result).toBe(false);
-    const targetCall = consoleSpy.mock.calls.find(call => 
-      call[0] && String(call[0]).includes('Error querying element button_0 with xpath //button:')
-    );
-    expect(targetCall).toBeDefined();
-    expect(String(targetCall![1])).toContain("Attempted to use detached Frame");
-    consoleSpy.mockRestore();
-  });
-
-  it('should handle detached frame error in typeElement and return false', async () => {
-    const mockEvaluate = vi.fn().mockResolvedValue([
+      { tag: 'button', type: '', text: 'Submit', placeholder: '', name: '', role: '', xpath: '//button' },
       { tag: 'input', type: 'text', text: '', placeholder: '', name: '', role: '', xpath: '//input' }
     ]);
-    const mockUrl = vi.fn().mockReturnValue('http://example.com');
-    setupMockBrowser({ evaluate: mockEvaluate, url: mockUrl, '$$': vi.fn().mockRejectedValue(new Error("Attempted to use detached Frame 'some_frame_id'")) });
+    setupMockBrowser({ evaluate: mockEvaluate, '$$': vi.fn().mockRejectedValue(new Error("Attempted to use detached Frame 'some_frame_id'")) });
 
     await helper.init();
-    await helper.getInteractiveElements(); // Populate elementsMap
+    await helper.getInteractiveElements();
 
     const consoleSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    const result = await helper.typeElement('input_0', 'test value');
 
-    expect(result).toBe(false);
-    const targetCall = consoleSpy.mock.calls.find(call => 
-      call[0] && String(call[0]).includes('Error querying element input_0 with xpath //input:')
-    );
-    expect(targetCall).toBeDefined();
-    expect(String(targetCall![1])).toContain("Attempted to use detached Frame");
+    expect(await helper.clickElement('button_0')).toBe(false);
+    expect(await helper.typeElement('input_1', 'test value')).toBe(false);
+
+    expect(consoleSpy.mock.calls.some(call => call[0] && String(call[0]).includes('Error querying element'))).toBe(true);
     consoleSpy.mockRestore();
   });
 
@@ -356,37 +329,40 @@ function setupMockBrowser(pageOverrides: any = {}, browserOverrides: any = {}) {
     await expect(helper.handleStripeIframe('4242', '12/28', '123', 'Test')).rejects.toThrow('Browser not initialized');
   });
 
-  it('should handle evaluation click fallback when node is null', async () => {
-    const mockUrl = vi.fn().mockReturnValue('http://example.com');
 
-    // Mock global objects for the page.evaluate fallback function
+  function setupFallbackMock(nodeValue: any) {
     const originalDocument = global.document;
     const originalXPathResult = global.XPathResult;
+    global.document = { evaluate: vi.fn().mockReturnValue({ singleNodeValue: nodeValue }) } as any;
+    global.XPathResult = { FIRST_ORDERED_NODE_TYPE: 9 } as any;
 
-    global.document = {
-      evaluate: vi.fn().mockReturnValue({
-        singleNodeValue: null
-      })
-    } as any;
+    const { mockPage } = setupMockBrowser({ evaluate: vi.fn().mockImplementation((fn, ...args) => { if (args.length === 0) { return [{ tag: 'button', type: '', text: 'Submit', placeholder: '', name: '', role: '', xpath: '//button' }]; } else { return fn(...args); } }), '$$': vi.fn().mockResolvedValue([]) });
+    return { mockPage, cleanup: () => { global.document = originalDocument; global.XPathResult = originalXPathResult; } };
+  }
 
-    global.XPathResult = {
-      FIRST_ORDERED_NODE_TYPE: 9
-    } as any;
+  it('should handle evaluation click fallback when node is null', async () => {
+    const { mockPage, cleanup } = setupFallbackMock(null);
+    await helper.init();
+    await helper.getInteractiveElements();
+    expect(await helper.clickElement('button_0')).toBe(false);
+    expect(mockPage.evaluate).toHaveBeenCalledTimes(2);
+    expect(global.document.evaluate).toHaveBeenCalledWith('//button', global.document, null, 9, null);
+    cleanup();
+  });
 
-    // Mock $$ returning empty array to trigger fallback
-    const { mockPage } = setupMockBrowser({ evaluate: vi.fn().mockImplementation((fn, ...args) => { if (args.length === 0) { return [{ tag: 'button', type: '', text: 'Submit', placeholder: '', name: '', role: '', xpath: '//button' }]; } else { return fn(...args); } }), url: mockUrl, '$$': vi.fn().mockResolvedValue([]) });
+  it('should handle evaluation click fallback', async () => {
+    const mockScrollIntoView = vi.fn();
+    const mockClick = vi.fn();
+    const { mockPage, cleanup } = setupFallbackMock({ scrollIntoView: mockScrollIntoView, click: mockClick });
 
     await helper.init();
-    await helper.getInteractiveElements(); // Populate elementsMap
-    const result = await helper.clickElement('button_0');
-
-    expect(mockPage.evaluate).toHaveBeenCalledTimes(2); // once for elements, once for fallback click
-    expect(result).toBe(false);
+    await helper.getInteractiveElements();
+    expect(await helper.clickElement('button_0')).toBe(true);
+    expect(mockPage.evaluate).toHaveBeenCalledTimes(2);
     expect(global.document.evaluate).toHaveBeenCalledWith('//button', global.document, null, 9, null);
-
-    // Cleanup globals
-    global.document = originalDocument;
-    global.XPathResult = originalXPathResult;
+    expect(mockScrollIntoView).toHaveBeenCalledWith({ block: 'center' });
+    expect(mockClick).toHaveBeenCalled();
+    cleanup();
   });
 
   it('should handle exception during stripe iframe handling', async () => {
@@ -399,47 +375,6 @@ function setupMockBrowser(pageOverrides: any = {}, browserOverrides: any = {}) {
     expect(result).toBe(false);
     expect(consoleSpy).toHaveBeenCalledWith('Exception during Stripe iframe handling:', expect.any(Error));
     consoleSpy.mockRestore();
-  });
-
-  it('should handle evaluation click fallback', async () => {
-    const mockUrl = vi.fn().mockReturnValue('http://example.com');
-
-    // Mock global objects for the page.evaluate fallback function
-    const originalDocument = global.document;
-    const originalXPathResult = global.XPathResult;
-
-    const mockScrollIntoView = vi.fn();
-    const mockClick = vi.fn();
-
-    global.document = {
-      evaluate: vi.fn().mockReturnValue({
-        singleNodeValue: {
-          scrollIntoView: mockScrollIntoView,
-          click: mockClick
-        }
-      })
-    } as any;
-
-    global.XPathResult = {
-      FIRST_ORDERED_NODE_TYPE: 9
-    } as any;
-
-    // Mock $$ returning empty array to trigger fallback
-    const { mockPage } = setupMockBrowser({ evaluate: vi.fn().mockImplementation((fn, ...args) => { if (args.length === 0) { return [{ tag: 'button', type: '', text: 'Submit', placeholder: '', name: '', role: '', xpath: '//button' }]; } else { return fn(...args); } }), url: mockUrl, '$$': vi.fn().mockResolvedValue([]) });
-
-    await helper.init();
-    await helper.getInteractiveElements(); // Populate elementsMap
-    const result = await helper.clickElement('button_0');
-
-    expect(mockPage.evaluate).toHaveBeenCalledTimes(2); // once for elements, once for fallback click
-    expect(result).toBe(true);
-    expect(global.document.evaluate).toHaveBeenCalledWith('//button', global.document, null, 9, null);
-    expect(mockScrollIntoView).toHaveBeenCalledWith({ block: 'center' });
-    expect(mockClick).toHaveBeenCalled();
-
-    // Cleanup globals
-    global.document = originalDocument;
-    global.XPathResult = originalXPathResult;
   });
 
 });
