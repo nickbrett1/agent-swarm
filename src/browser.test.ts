@@ -77,6 +77,59 @@ function setupMockBrowser(pageOverrides: any = {}, browserOverrides: any = {}) {
     expect(mockClose).toHaveBeenCalled();
   });
 
+  it('should expose limits on initial launch rate limit error', async () => {
+    setupMockBrowser();
+    const rateLimitError = new Error('Unable to create new browser: code: 429: message: Rate limit exceeded');
+    (puppeteer.launch as any).mockRejectedValue(rateLimitError);
+
+    const mockLimits = {
+      activeSessions: [{ id: '1' }, { id: '2' }],
+      maxConcurrentSessions: 2,
+      allowedBrowserAcquisitions: 0,
+      timeUntilNextAllowedBrowserAcquisition: 5000,
+    };
+
+    const originalLimits = puppeteer.limits;
+    puppeteer.limits = vi.fn().mockResolvedValue(mockLimits) as any;
+
+    try {
+      await helper.init();
+      throw new Error('Should have thrown an error');
+    } catch (err: any) {
+      expect(err.message).toContain('Cloudflare Limits: Active Sessions=2/2, Acquisitions Allowed=0, Time Until Next Acquisition=5000ms');
+    } finally {
+      puppeteer.limits = originalLimits;
+    }
+  });
+
+  it('should expose limits on retry launch rate limit error', async () => {
+    setupMockBrowser();
+    const initialError = new Error('Some other launch error');
+    const rateLimitError = new Error('Unable to create new browser: code: 429: message: Rate limit exceeded');
+    (puppeteer.launch as any)
+      .mockRejectedValueOnce(initialError)
+      .mockRejectedValue(rateLimitError);
+
+    const mockLimits = {
+      activeSessions: [{ id: '1' }],
+      maxConcurrentSessions: 2,
+      allowedBrowserAcquisitions: 0,
+      timeUntilNextAllowedBrowserAcquisition: 3000,
+    };
+
+    const originalLimits = puppeteer.limits;
+    puppeteer.limits = vi.fn().mockResolvedValue(mockLimits) as any;
+
+    try {
+      await helper.init();
+      throw new Error('Should have thrown an error');
+    } catch (err: any) {
+      expect(err.message).toContain('Cloudflare Limits: Active Sessions=1/2, Acquisitions Allowed=0, Time Until Next Acquisition=3000ms');
+    } finally {
+      puppeteer.limits = originalLimits;
+    }
+  });
+
   it('should ignore close if a string error is thrown', async () => {
     const mockClose = vi.fn().mockRejectedValue('String error');
     setupMockBrowser({}, { close: mockClose });
