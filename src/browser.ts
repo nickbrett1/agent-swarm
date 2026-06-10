@@ -117,7 +117,22 @@ export class PuppeteerBrowserHelper {
         }
 
         console.log("Retrying launch after clearing sessions...");
-        this.browser = await puppeteer.launch(this.browserBinding, { keep_alive: 10000 });
+        try {
+          this.browser = await puppeteer.launch(this.browserBinding, { keep_alive: 10000 });
+        } catch (retryErr) {
+          const errMsg = retryErr instanceof Error ? retryErr.message : String(retryErr);
+          if (errMsg.includes("429") || errMsg.toLowerCase().includes("rate limit") || errMsg.includes("Unable to create new browser")) {
+            let limitsInfo;
+            try {
+              limitsInfo = await puppeteer.limits(this.browserBinding);
+            } catch (limitErr) {
+              console.warn("Failed to fetch limits after rate limit error:", limitErr);
+              throw retryErr;
+            }
+            throw new Error(`${errMsg} - Cloudflare Limits: Active Sessions=${limitsInfo.activeSessions ? limitsInfo.activeSessions.length : 0}/${limitsInfo.maxConcurrentSessions}, Acquisitions Allowed=${limitsInfo.allowedBrowserAcquisitions}, Time Until Next Acquisition=${limitsInfo.timeUntilNextAllowedBrowserAcquisition}ms`);
+          }
+          throw retryErr;
+        }
       }
     }
 
