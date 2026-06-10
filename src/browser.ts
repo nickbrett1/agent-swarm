@@ -360,8 +360,24 @@ export class PuppeteerBrowserHelper {
     }
     try {
       const elements = await this.page.$$(`xpath/${xpath}`);
+      if (elements.length === 0) {
+        return {
+          element: null,
+          xpath
+        };
+      }
+      // Dispose of extra handles we won't use to avoid reference leaks
+      for (let i = 1; i < elements.length; i++) {
+        try {
+          if (elements[i] && typeof elements[i].dispose === 'function') {
+            await elements[i].dispose();
+          }
+        } catch (e) {
+          // ignore
+        }
+      }
       return {
-        element: elements.length > 0 ? elements[0] : null,
+        element: elements[0],
         xpath
       };
     } catch (err) {
@@ -383,9 +399,15 @@ export class PuppeteerBrowserHelper {
     console.log(`Clicking element: ${id} (XPath: ${xpath})`);
     try {
       if (element) {
-        await element.scrollIntoView();
-        await element.click();
-        return true;
+        try {
+          await element.scrollIntoView();
+          await element.click();
+          return true;
+        } finally {
+          if (element && typeof element.dispose === 'function') {
+            await element.dispose();
+          }
+        }
       }
       // Fallback: evaluate click directly via JS
       const clicked = await this.page.evaluate((xp) => {
@@ -418,12 +440,18 @@ export class PuppeteerBrowserHelper {
     console.log(`Typing "${text}" into element: ${id}`);
     try {
       if (element) {
-        await element.scrollIntoView();
-        // Clear existing value if possible
-        await element.click({ clickCount: 3 });
-        await this.page.keyboard.press('Backspace');
-        await element.type(text);
-        return true;
+        try {
+          await element.scrollIntoView();
+          // Clear existing value if possible
+          await element.click({ clickCount: 3 });
+          await this.page.keyboard.press('Backspace');
+          await element.type(text);
+          return true;
+        } finally {
+          if (element && typeof element.dispose === 'function') {
+            await element.dispose();
+          }
+        }
       }
       return false;
     } catch (err) {
@@ -453,13 +481,19 @@ export class PuppeteerBrowserHelper {
           try {
             const handle = await frame.$(selector);
             if (handle) {
-              await handle.scrollIntoView();
-              await handle.evaluate((el, val) => {
-                (el as HTMLInputElement).value = val;
-                el.dispatchEvent(new Event('input', { bubbles: true }));
-                el.dispatchEvent(new Event('change', { bubbles: true }));
-              }, value);
-              return true;
+              try {
+                await handle.scrollIntoView();
+                await handle.evaluate((el, val) => {
+                  (el as HTMLInputElement).value = val;
+                  el.dispatchEvent(new Event('input', { bubbles: true }));
+                  el.dispatchEvent(new Event('change', { bubbles: true }));
+                }, value);
+                return true;
+              } finally {
+                if (handle && typeof handle.dispose === 'function') {
+                  await handle.dispose();
+                }
+              }
             }
           } catch {
             // Ignore if selector is not found in this frame
