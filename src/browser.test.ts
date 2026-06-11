@@ -25,7 +25,7 @@ function setupMockBrowser(pageOverrides: any = {}, browserOverrides: any = {}) {
     setDefaultTimeout: vi.fn(),
     setRequestInterception: vi.fn().mockResolvedValue(true),
     on: vi.fn(),
-    url: vi.fn().mockReturnValue('http://example.com'),
+    url: vi.fn().mockReturnValue('https://example.com'),
     '$$': vi.fn().mockResolvedValue([]),
     evaluate: vi.fn(),
     ...pageOverrides,
@@ -163,7 +163,7 @@ function setupMockBrowser(pageOverrides: any = {}, browserOverrides: any = {}) {
   });
 
   it('should throw error on goto if not initialized', async () => {
-    await expect(helper.goto('http://example.com')).rejects.toThrow('Browser not initialized');
+    await expect(helper.goto('https://example.com')).rejects.toThrow('Browser not initialized');
   });
 
   it('should navigate to url', async () => {
@@ -171,19 +171,19 @@ function setupMockBrowser(pageOverrides: any = {}, browserOverrides: any = {}) {
     setupMockBrowser({ goto: mockGoto });
 
     await helper.init();
-    await helper.goto('http://example.com');
+    await helper.goto('https://example.com');
 
-    expect(mockGoto).toHaveBeenCalledWith('http://example.com', { waitUntil: 'domcontentloaded' });
+    expect(mockGoto).toHaveBeenCalledWith('https://example.com', { waitUntil: 'domcontentloaded' });
   });
 
   it('should get page url', async () => {
-    const mockUrl = vi.fn().mockReturnValue('http://example.com');
+    const mockUrl = vi.fn().mockReturnValue('https://example.com');
     setupMockBrowser({ url: mockUrl });
 
     await helper.init();
     const url = await helper.getPageUrl();
 
-    expect(url).toBe('http://example.com');
+    expect(url).toBe('https://example.com');
   });
 
   it('should return empty url if page not initialized', async () => {
@@ -221,7 +221,7 @@ function setupMockBrowser(pageOverrides: any = {}, browserOverrides: any = {}) {
     const mockEvaluate = vi.fn().mockResolvedValue([
       { tag: 'button', type: '', text: 'Submit', placeholder: '', name: '', role: '', xpath: '//button' }
     ]);
-    const mockUrl = vi.fn().mockReturnValue('http://example.com');
+    const mockUrl = vi.fn().mockReturnValue('https://example.com');
     setupMockBrowser({ evaluate: mockEvaluate, url: mockUrl });
 
     await helper.init();
@@ -247,7 +247,7 @@ function setupMockBrowser(pageOverrides: any = {}, browserOverrides: any = {}) {
       return [{ tag: 'button', type: '', text: 'Retry Success', placeholder: '', name: '', role: '', xpath: '//button' }];
     });
 
-    const mockUrl = vi.fn().mockReturnValue('http://example.com');
+    const mockUrl = vi.fn().mockReturnValue('https://example.com');
     setupMockBrowser({ evaluate: mockEvaluate, url: mockUrl, waitForNavigation: vi.fn().mockResolvedValue(undefined) });
 
     await helper.init();
@@ -273,7 +273,7 @@ function setupMockBrowser(pageOverrides: any = {}, browserOverrides: any = {}) {
       }
       return [{ tag: 'button', type: '', text: 'Recovered Success', placeholder: '', name: '', role: '', xpath: '//button' }];
     });
-    const mockUrl = vi.fn().mockReturnValue('http://example.com/checkout');
+    const mockUrl = vi.fn().mockReturnValue('https://example.com/checkout');
     setupMockBrowser({ evaluate: mockEvaluate, url: mockUrl, waitForNavigation: vi.fn().mockResolvedValue(undefined) });
 
     await helper.init();
@@ -291,7 +291,7 @@ function setupMockBrowser(pageOverrides: any = {}, browserOverrides: any = {}) {
 
   it('should handle persistent detached frame error in getInteractiveElements gracefully and return empty list', async () => {
     const mockEvaluate = vi.fn().mockRejectedValue(new Error("Attempted to use detached Frame '95CB2584FB21941F5737E7A4A726D588'"));
-    const mockUrl = vi.fn().mockReturnValue('http://example.com/checkout');
+    const mockUrl = vi.fn().mockReturnValue('https://example.com/checkout');
     setupMockBrowser({ evaluate: mockEvaluate, url: mockUrl, waitForNavigation: vi.fn().mockResolvedValue(undefined) });
 
     await helper.init();
@@ -309,7 +309,7 @@ function setupMockBrowser(pageOverrides: any = {}, browserOverrides: any = {}) {
 
   it('should handle success page detected during getInteractiveElements error', async () => {
     const mockEvaluate = vi.fn().mockRejectedValue(new Error('Evaluation failed'));
-    const mockUrl = vi.fn().mockReturnValue('http://example.com/success');
+    const mockUrl = vi.fn().mockReturnValue('https://example.com/success');
     setupMockBrowser({ evaluate: mockEvaluate, url: mockUrl, waitForNavigation: vi.fn().mockResolvedValue(undefined) });
 
     await helper.init();
@@ -404,7 +404,7 @@ function setupMockBrowser(pageOverrides: any = {}, browserOverrides: any = {}) {
     const mockClick = vi.fn();
     const mockScrollIntoView = vi.fn();
     const mockPress = vi.fn();
-    const { mockPage } = setupMockBrowser({ evaluate: mockEvaluate, url: vi.fn().mockReturnValue('http://example.com'), '$$': vi.fn().mockResolvedValue([{ scrollIntoView: mockScrollIntoView, click: mockClick, type: typeFn }]), keyboard: { press: mockPress } });
+    const { mockPage } = setupMockBrowser({ evaluate: mockEvaluate, url: vi.fn().mockReturnValue('https://example.com'), '$$': vi.fn().mockResolvedValue([{ scrollIntoView: mockScrollIntoView, click: mockClick, type: typeFn }]), keyboard: { press: mockPress } });
     return { mockPage, mockClick, mockScrollIntoView, mockPress, typeFn };
   }
 
