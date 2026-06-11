@@ -2,8 +2,7 @@ import { Agent, routeAgentRequest, callable } from "agents";
 import { PuppeteerBrowserHelper } from "./browser.js";
 import puppeteer, { BrowserWorker } from "@cloudflare/puppeteer";
 import type { Ai } from "@cloudflare/workers-types";
-import { isIPv4, isIPv6 } from "is-ip";
-import { Address4, Address6 } from "ip-address";
+import ipaddr from "ipaddr.js";
 
 const agentCallable = callable as (...args: any[]) => any;
 
@@ -46,42 +45,29 @@ export class ShopperAgent extends Agent<Env, ShopperState> {
   /**
    * Helper to determine if an IP address is private/local.
    */
-  private isPrivateIp(ip: string): boolean {
+  private isPrivateIp(ipStr: string): boolean {
     try {
-      if (ip.includes(':')) {
-        const addr = new Address6(ip);
-        if (addr.is4()) {
-          return this.isPrivateIp(addr.to4().address);
-        }
-        if (addr.isLoopback()) return true;
-        if (addr.isLinkLocal()) return true;
+      let ip = ipaddr.parse(ipStr);
 
-        // Unique local addresses (fc00::/7)
-        const hex = addr.canonicalForm().split(':')[0];
-        if (hex.startsWith('fc') || hex.startsWith('fd')) return true;
-      } else if (ip.includes('.')) {
-        const addr = new Address4(ip);
-        // Loopback
-        if (addr.address.startsWith('127.')) return true;
-        // Current network
-        if (addr.address.startsWith('0.')) return true;
-        // Private 10.x.x.x
-        if (addr.address.startsWith('10.')) return true;
-        // Private 192.168.x.x
-        if (addr.address.startsWith('192.168.')) return true;
-        // Link-local 169.254.x.x
-        if (addr.address.startsWith('169.254.')) return true;
-
-        // Private 172.16.x.x to 172.31.x.x
-        const octet1 = parseInt(addr.parsedAddress[0], 10);
-        const octet2 = parseInt(addr.parsedAddress[1], 10);
-        if (octet1 === 172 && octet2 >= 16 && octet2 <= 31) return true;
+      // If it's an IPv4-mapped IPv6 address (e.g., ::ffff:192.168.1.1),
+      // extract the underlying IPv4 address to check its true range.
+      if (ip.kind() === 'ipv6' && (ip as ipaddr.IPv6).isIPv4MappedAddress()) {
+        ip = (ip as ipaddr.IPv6).toIPv4Address();
       }
+
+      const range = ip.range();
+
+      return (
+        range === 'private' ||
+        range === 'loopback' ||
+        range === 'linkLocal' ||
+        range === 'unspecified' ||
+        range === 'uniqueLocal'
+      );
     } catch {
       // If parsing fails, default to treating it as safe or handled elsewhere
       return false;
     }
-    return false;
   }
 
   /**
@@ -110,7 +96,7 @@ export class ShopperAgent extends Agent<Env, ShopperState> {
       }
 
       // If it's already an IP address, just check it directly
-      if (isIPv4(hostname) || isIPv6(hostname)) {
+      if (ipaddr.isValid(hostname)) {
         return !this.isPrivateIp(hostname);
       }
 
@@ -141,7 +127,7 @@ export class ShopperAgent extends Agent<Env, ShopperState> {
       for (const record of allRecords) {
         // A record type is 1, AAAA record type is 28. CNAMEs might also be returned.
         // We just check the data field for any returned IP.
-        if (isIPv4(record.data) || isIPv6(record.data)) {
+        if (ipaddr.isValid(record.data)) {
           if (this.isPrivateIp(record.data)) {
             console.warn(`DNS resolution for ${hostname} returned a private IP: ${record.data}`);
             return false;
