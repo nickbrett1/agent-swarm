@@ -277,7 +277,7 @@ export class PuppeteerBrowserHelper {
 
           const results: ElementData[] = [];
           const selector = 'button, a, input, select, textarea, [role="button"], [onclick]';
-          const nodes = Array.from(document.querySelectorAll(selector));
+          const nodes = document.querySelectorAll(selector);
 
           nodes.forEach((node) => {
             const el = node as HTMLElement;
