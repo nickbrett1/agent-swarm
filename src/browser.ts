@@ -492,27 +492,26 @@ export class PuppeteerBrowserHelper {
 
       // Helper to fill a field in a frame
       async function fillInFrame(frame: Frame, selectors: string[], value: string): Promise<boolean> {
-        for (const selector of selectors) {
-          try {
-            const handle = await frame.$(selector);
-            if (handle) {
-              try {
-                await handle.scrollIntoView();
-                await handle.evaluate((el, val) => {
-                  (el as HTMLInputElement).value = val;
-                  el.dispatchEvent(new Event('input', { bubbles: true }));
-                  el.dispatchEvent(new Event('change', { bubbles: true }));
-                }, value);
-                return true;
-              } finally {
-                if (handle && typeof handle.dispose === 'function') {
-                  await handle.dispose();
-                }
+        try {
+          const combinedSelector = selectors.join(',');
+          const handle = await frame.$(combinedSelector);
+          if (handle) {
+            try {
+              await handle.scrollIntoView();
+              await handle.evaluate((el, val) => {
+                (el as HTMLInputElement).value = val;
+                el.dispatchEvent(new Event('input', { bubbles: true }));
+                el.dispatchEvent(new Event('change', { bubbles: true }));
+              }, value);
+              return true;
+            } finally {
+              if (handle && typeof handle.dispose === 'function') {
+                await handle.dispose();
               }
             }
-          } catch {
-            // Ignore if selector is not found in this frame
           }
+        } catch {
+          // Ignore if selector is not found in this frame
         }
         return false;
       }
