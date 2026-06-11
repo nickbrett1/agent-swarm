@@ -135,7 +135,6 @@ export class ShopperAgent extends Agent<Env, ShopperState> {
 
       while (step < maxSteps && !finished) {
         step++;
-        console.log(`--- Step ${step} ---`);
         
         // Check if the current URL is a success/thank-you/complete page
         const currentUrl = await helper.getPageUrl();
@@ -143,7 +142,7 @@ export class ShopperAgent extends Agent<Env, ShopperState> {
         if (lowerUrl.includes("success") ||
             lowerUrl.includes("thank") ||
             lowerUrl.includes("complete")) {
-          console.log(`Success page detected: ${currentUrl}. Finishing shopping run.`);
+          console.log(JSON.stringify({ message: "Success page detected. Finishing shopping run.", url: currentUrl }));
           finished = true;
           outcomeSummary = `Successfully completed purchase. Redirected to: ${currentUrl}`;
           this.setState({ ...this.state, status: "completed" });
@@ -152,8 +151,11 @@ export class ShopperAgent extends Agent<Env, ShopperState> {
 
         // 1. Get current page elements
         const pageData = await helper.getInteractiveElements();
-        console.log(`Page URL: ${currentUrl}`);
-        console.log(`Interactive nodes count: ${pageData.elements.length}`);
+        console.log(JSON.stringify({
+          step,
+          url: currentUrl,
+          interactiveNodesCount: pageData.elements.length
+        }));
 
         // 2. Build the LLM prompt
         const { systemPrompt, userPrompt } = this.buildLLMPrompt(persona, pageData.textSummary, this.state.history);
@@ -166,7 +168,7 @@ export class ShopperAgent extends Agent<Env, ShopperState> {
         if (logDecision.text) {
           logDecision.text = "***REDACTED***";
         }
-        console.log("LLM Decision:", JSON.stringify(logDecision, null, 2));
+        console.log(JSON.stringify({ message: "LLM Decision", decision: logDecision }));
 
         const actionLog = `Step ${step}: ${decision.explanation} -> Action: ${decision.action}${decision.targetId ? ' on ' + decision.targetId : ''}${decision.text ? ' value="***REDACTED***"' : ''}`;
         this.setState({
@@ -194,11 +196,11 @@ export class ShopperAgent extends Agent<Env, ShopperState> {
 
             const clickOk = await helper.clickElement(decision.targetId);
             if (!clickOk) {
-              console.warn(`Click on ${decision.targetId} failed, trying to find alternatives...`);
+              console.warn(JSON.stringify({ message: "Click failed, trying to find alternatives...", targetId: decision.targetId }));
             }
 
             if (isPayOrSubmit) {
-              console.log("Pay/Submit/Buy button clicked, waiting 4 seconds for transaction/navigation to settle...");
+              console.log(JSON.stringify({ message: "Pay/Submit/Buy button clicked, waiting 4 seconds for transaction/navigation to settle..." }));
               await helper.wait(4000);
             } else {
               await helper.wait(1500); // Wait for dynamic layout/routing
@@ -212,7 +214,7 @@ export class ShopperAgent extends Agent<Env, ShopperState> {
             }
             const typeOk = await helper.typeElement(decision.targetId, decision.text);
             if (!typeOk) {
-              console.warn(`Type into ${decision.targetId} failed.`);
+              console.warn(JSON.stringify({ message: "Type failed.", targetId: decision.targetId }));
             }
             break;
           }
@@ -228,19 +230,19 @@ export class ShopperAgent extends Agent<Env, ShopperState> {
               throw new Error("Missing required Stripe test credentials in environment configuration.");
             }
 
-            console.log("Filling Stripe checkout details...");
+            console.log(JSON.stringify({ message: "Filling Stripe checkout details..." }));
             const stripeOk = await helper.handleStripeIframe(card, expiry, cvc, name);
             if (stripeOk) {
-              console.log("Stripe card credentials filled successfully.");
+              console.log(JSON.stringify({ message: "Stripe card credentials filled successfully." }));
             } else {
-              console.warn("Could not find Stripe inputs. Continuing in case fields are on main page...");
+              console.warn(JSON.stringify({ message: "Could not find Stripe inputs. Continuing in case fields are on main page..." }));
             }
             await helper.wait(1000);
             break;
           }
 
           case "wait": {
-            console.log("Waiting 3 seconds...");
+            console.log(JSON.stringify({ message: "Waiting 3 seconds..." }));
             await helper.wait(3000);
             break;
           }
