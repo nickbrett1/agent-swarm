@@ -412,19 +412,25 @@ export class PuppeteerBrowserHelper {
     const { element, xpath } = result;
 
     console.log(`Clicking element: ${id} (XPath: ${xpath})`);
-    try {
-      if (element) {
-        try {
-          await element.scrollIntoView();
-          await element.click();
-          return true;
-        } finally {
-          if (element && typeof element.dispose === 'function') {
-            await element.dispose();
-          }
+
+    // Attempt native Puppeteer click first
+    if (element) {
+      try {
+        await element.scrollIntoView();
+        await element.click();
+        return true;
+      } catch (nativeErr) {
+        console.warn(`Native click failed for ${id}, attempting fallback...`, nativeErr instanceof Error ? nativeErr.message : String(nativeErr));
+        // Proceed to fallback
+      } finally {
+        if (typeof element.dispose === 'function') {
+          await element.dispose();
         }
       }
-      // Fallback: evaluate click directly via JS
+    }
+
+    // Fallback: evaluate click directly via JS if element is null or native click failed
+    try {
       const clicked = await this.page.evaluate((xp) => {
         const res = document.evaluate(xp, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
         const node = res.singleNodeValue as HTMLElement;
@@ -437,7 +443,7 @@ export class PuppeteerBrowserHelper {
       }, xpath);
       return clicked;
     } catch (err) {
-      console.error(`Error clicking element ${id}:`, err);
+      console.error(`Error in click fallback for element ${id}:`, err);
       return false;
     }
   }
