@@ -482,6 +482,16 @@ export async function verifyHmacSignature(
   }
 }
 
+const ALLOWED_ORIGINS = ["https://fintechnick.com", "http://localhost:3000"];
+
+function getCorsOrigin(request: Request): string {
+  const origin = request.headers.get("Origin");
+  if (origin && ALLOWED_ORIGINS.includes(origin)) {
+    return origin;
+  }
+  return ALLOWED_ORIGINS[0];
+}
+
 export default {
   async fetch(request: Request, env: Env) {
     const url = new URL(request.url);
@@ -491,7 +501,7 @@ export default {
       return new Response(null, {
         status: 204,
         headers: {
-          "Access-Control-Allow-Origin": "*",
+          "Access-Control-Allow-Origin": getCorsOrigin(request),
           "Access-Control-Allow-Methods": "GET, OPTIONS",
           "Access-Control-Allow-Headers": "Content-Type"
         }
@@ -544,7 +554,7 @@ export default {
         status: 200,
         headers: {
           "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": "*",
+          "Access-Control-Allow-Origin": getCorsOrigin(request),
           "Access-Control-Allow-Methods": "GET, OPTIONS",
           "Access-Control-Allow-Headers": "Content-Type"
         }
@@ -592,7 +602,7 @@ export default {
         status: 200,
         headers: {
           "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": "*",
+          "Access-Control-Allow-Origin": getCorsOrigin(request),
           "Access-Control-Allow-Methods": "GET, OPTIONS",
           "Access-Control-Allow-Headers": "Content-Type"
         }

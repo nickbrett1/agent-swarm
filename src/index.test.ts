@@ -276,12 +276,26 @@ describe('Worker Default Export', () => {
     expect(data.limits).toBeUndefined();
   });
 
-  it('should return 204 on OPTIONS preflight', async () => {
-    const req = new Request('http://localhost/info', { method: 'OPTIONS' });
+  it('should return 204 on OPTIONS preflight with allowed origin', async () => {
+    const req = new Request('http://localhost/info', {
+      method: 'OPTIONS',
+      headers: { 'Origin': 'https://fintechnick.com' }
+    });
     const env = {};
     const res = await workerDefault.fetch(req, env as any);
     expect(res.status).toBe(204);
-    expect(res.headers.get('Access-Control-Allow-Origin')).toBe('*');
+    expect(res.headers.get('Access-Control-Allow-Origin')).toBe('https://fintechnick.com');
+  });
+
+  it('should return 204 on OPTIONS preflight with unallowed origin defaulting to fintechnick.com', async () => {
+    const req = new Request('http://localhost/info', {
+      method: 'OPTIONS',
+      headers: { 'Origin': 'https://evil.com' }
+    });
+    const env = {};
+    const res = await workerDefault.fetch(req, env as any);
+    expect(res.status).toBe(204);
+    expect(res.headers.get('Access-Control-Allow-Origin')).toBe('https://fintechnick.com');
   });
 
   it('should return limits on /limits', async () => {
