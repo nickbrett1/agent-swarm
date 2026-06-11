@@ -3,6 +3,7 @@ import { PuppeteerBrowserHelper } from "./browser.js";
 import puppeteer, { BrowserWorker } from "@cloudflare/puppeteer";
 import type { Ai } from "@cloudflare/workers-types";
 import { isIPv4, isIPv6 } from "is-ip";
+import { Address4, Address6 } from "ip-address";
 
 const agentCallable = callable as (...args: any[]) => any;
 
@@ -46,45 +47,40 @@ export class ShopperAgent extends Agent<Env, ShopperState> {
    * Helper to determine if an IP address is private/local.
    */
   private isPrivateIp(ip: string): boolean {
-    // Check IPv4 using split to avoid Regex vulnerabilities
-    if (ip.includes('.')) {
-      const parts = ip.split('.');
-      if (parts.length === 4) {
-        const octet1 = parseInt(parts[0], 10);
-        const octet2 = parseInt(parts[1], 10);
-
-        if (!isNaN(octet1) && !isNaN(octet2)) {
-          // 127.x.x.x (Loopback)
-          if (octet1 === 127) return true;
-          // 10.x.x.x (Private)
-          if (octet1 === 10) return true;
-          // 172.16.x.x - 172.31.x.x (Private)
-          if (octet1 === 172 && octet2 >= 16 && octet2 <= 31) return true;
-          // 192.168.x.x (Private)
-          if (octet1 === 192 && octet2 === 168) return true;
-          // 169.254.x.x (Link-local / AWS metadata)
-          if (octet1 === 169 && octet2 === 254) return true;
-          // 0.x.x.x (Current network)
-          if (octet1 === 0) return true;
+    try {
+      if (ip.includes(':')) {
+        const addr = new Address6(ip);
+        if (addr.is4()) {
+          return this.isPrivateIp(addr.to4().address);
         }
+        if (addr.isLoopback()) return true;
+        if (addr.isLinkLocal()) return true;
+
+        // Unique local addresses (fc00::/7)
+        const hex = addr.canonicalForm().split(':')[0];
+        if (hex.startsWith('fc') || hex.startsWith('fd')) return true;
+      } else if (ip.includes('.')) {
+        const addr = new Address4(ip);
+        // Loopback
+        if (addr.address.startsWith('127.')) return true;
+        // Current network
+        if (addr.address.startsWith('0.')) return true;
+        // Private 10.x.x.x
+        if (addr.address.startsWith('10.')) return true;
+        // Private 192.168.x.x
+        if (addr.address.startsWith('192.168.')) return true;
+        // Link-local 169.254.x.x
+        if (addr.address.startsWith('169.254.')) return true;
+
+        // Private 172.16.x.x to 172.31.x.x
+        const octet1 = parseInt(addr.parsedAddress[0], 10);
+        const octet2 = parseInt(addr.parsedAddress[1], 10);
+        if (octet1 === 172 && octet2 >= 16 && octet2 <= 31) return true;
       }
+    } catch {
+      // If parsing fails, default to treating it as safe or handled elsewhere
+      return false;
     }
-
-    const ipv6 = ip.toLowerCase();
-    if (ipv6 === '::1' || ipv6 === '0:0:0:0:0:0:0:1') return true;
-    // Unique Local Addresses (fc00::/7)
-    if (ipv6.startsWith('fc') || ipv6.startsWith('fd')) return true;
-    // Link-local (fe80::/10)
-    if (ipv6.startsWith('fe8') || ipv6.startsWith('fe9') || ipv6.startsWith('fea') || ipv6.startsWith('feb')) return true;
-
-    // IPv4-mapped IPv6 addresses (e.g. ::ffff:127.0.0.1)
-    if (ipv6.startsWith('::ffff:')) {
-      const mappedIpv4 = ipv6.substring(7);
-      if (this.isPrivateIp(mappedIpv4)) {
-        return true;
-      }
-    }
-
     return false;
   }
 
