@@ -306,8 +306,9 @@ Guidelines:
 1. Review the element IDs closely. Choose the ID that best aligns with your next step.
 2. If you are looking at a product catalog, click the "Buy Now" or "Add to Cart" button for a product matching the persona.
 3. If you are on the Checkout page and see Credit Card, Expiration, or CVC inputs, use the "stripe_fill" action (which will autofill these inputs inside the iframe).
-4. If you have submitted the payment and see a Success or Thank You page, output the "finish" action with a final success summary.
-5. RESPOND WITH A RAW JSON OBJECT ONLY. DO NOT WRAP IT IN MARKDOWN CODE BLOCKS OR EXTRA TEXT.`;
+4. After filling the card details using the "stripe_fill" action, you must find and click the "Pay", "Submit", or "Place Order" button using the "click" action to process the transaction. Do NOT run "stripe_fill" again to submit.
+5. If you have submitted the payment and see a Success or Thank You page, output the "finish" action with a final success summary.
+6. RESPOND WITH A RAW JSON OBJECT ONLY. DO NOT WRAP IT IN MARKDOWN CODE BLOCKS OR EXTRA TEXT.`;
 
     const userPrompt = `Your persona configuration: ${persona}
 

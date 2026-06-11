@@ -142,25 +142,7 @@ export class PuppeteerBrowserHelper {
     await this.page.setViewport({ width: 1280, height: 720 });
     this.page.setDefaultTimeout(15000);
 
-    // Block unnecessary requests (images, media, fonts) to save bandwidth and execution time
-    try {
-      await this.page.setRequestInterception(true);
-      this.page.on("request", async (req) => {
-        try {
-          const resourceType = req.resourceType();
-          if (["image", "media", "font"].includes(resourceType)) {
-            await req.abort();
-          } else {
-            await req.continue();
-          }
-        } catch (err) {
-          // Ignore request interception errors as they are common during navigation/closing
-          console.debug("Request interception failed:", err);
-        }
-      });
-    } catch (interceptErr) {
-      console.warn("Failed to enable request interception:", interceptErr);
-    }
+    // Request interception is disabled to ensure Stripe Checkout and dynamic frames load and behave correctly without hanging.
   }
 
   async close(): Promise<void> {
