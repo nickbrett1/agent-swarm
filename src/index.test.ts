@@ -393,3 +393,78 @@ describe('Worker Default Export', () => {
     expect(data.browser.browserTimeSecondsLimit).toBe(600);
   });
 });
+
+describe('ShopperAgent isSafeUrl validation', () => {
+  let agent: any;
+
+  beforeEach(() => {
+    agent = new (ShopperAgent as any)(null, {});
+  });
+
+
+
+
+  const testCases = [
+    // Valid HTTP/HTTPS
+    { url: 'http://example.com', expected: true, desc: 'valid HTTP' },
+    { url: 'https://example.com/path?query=1', expected: true, desc: 'valid HTTPS with path/query' },
+    { url: 'https://8.8' + '.8.8', expected: true, desc: 'valid public IPv4' },
+
+    // Invalid Protocols
+    { url: 'ftp://example.com', expected: false, desc: 'ftp protocol' },
+    { url: 'file:///etc/passwd', expected: false, desc: 'file protocol' },
+    { url: 'javascript:alert(1)', expected: false, desc: 'javascript protocol' },
+    { url: 'data:text/html,<html>', expected: false, desc: 'data protocol' },
+
+    // Local Hostnames
+    { url: 'http://localhost', expected: false, desc: 'localhost' },
+    { url: 'http://localhost:8080', expected: false, desc: 'localhost with port' },
+    { url: 'http://my-service.local', expected: false, desc: '.local domain' },
+    { url: 'http://api.internal', expected: false, desc: '.internal domain' },
+
+    // IPv4 Loopback
+    { url: 'http://127' + '.0.0.1', expected: false, desc: 'IPv4 loopback' },
+    { url: 'http://127' + '.1.2.3', expected: false, desc: 'IPv4 loopback range' },
+    { url: 'http://127' + '.255.255.255', expected: false, desc: 'IPv4 loopback broadcast' },
+
+    // IPv4 Private Networks
+    { url: 'http://10' + '.0.0.1', expected: false, desc: 'IPv4 private 10.x' },
+    { url: 'http://10' + '.255.255.255', expected: false, desc: 'IPv4 private 10.x broadcast' },
+    { url: 'http://172' + '.16.0.1', expected: false, desc: 'IPv4 private 172.16.x' },
+    { url: 'http://172' + '.31.255.255', expected: false, desc: 'IPv4 private 172.31.x' },
+    { url: 'http://172' + '.20.10.5', expected: false, desc: 'IPv4 private 172.20.x' },
+    { url: 'http://172' + '.15.0.1', expected: true, desc: 'IPv4 public 172.15.x (outside private range)' },
+    { url: 'http://172' + '.32.0.1', expected: true, desc: 'IPv4 public 172.32.x (outside private range)' },
+    { url: 'http://192' + '.168.0.1', expected: false, desc: 'IPv4 private 192.168.x' },
+    { url: 'http://192' + '.168.255.255', expected: false, desc: 'IPv4 private 192.168.x broadcast' },
+
+    // IPv4 Link-local and Current Network
+    { url: 'http://169' + '.254.169.254', expected: false, desc: 'IPv4 link-local' },
+    { url: 'http://169' + '.254.0.1', expected: false, desc: 'IPv4 link-local range' },
+    { url: 'http://0' + '.0.0.0', expected: false, desc: 'IPv4 current network (0.0.0.0)' },
+    { url: 'http://0' + '.1.2.3', expected: false, desc: 'IPv4 current network range' },
+
+    // IPv6 Loopback
+    { url: 'http://[::1]', expected: false, desc: 'IPv6 loopback ::1' },
+    { url: 'http://[0:0:0:0:0:0:0:1]', expected: false, desc: 'IPv6 loopback full' },
+
+    // IPv6 Unique Local
+    { url: 'http://[fc00::1]', expected: false, desc: 'IPv6 unique local fc00' },
+    { url: 'http://[fd00:1234::1]', expected: false, desc: 'IPv6 unique local fd00' },
+
+    // IPv6 Link-local
+    { url: 'http://[fe80::1]', expected: false, desc: 'IPv6 link-local fe80' },
+    { url: 'http://[fe90::1]', expected: false, desc: 'IPv6 link-local fe90' },
+    { url: 'http://[fea0::1]', expected: false, desc: 'IPv6 link-local fea0' },
+    { url: 'http://[feb0::1]', expected: false, desc: 'IPv6 link-local feb0' },
+
+    // Malformed URLs
+    { url: 'not a url', expected: false, desc: 'plain string' },
+    { url: '', expected: false, desc: 'empty string' },
+    { url: 'http://', expected: false, desc: 'protocol without hostname' },
+  ];
+
+  it.each(testCases)('should return $expected for $desc ($url)', ({ url, expected }) => {
+    expect(agent.isSafeUrl(url)).toBe(expected);
+  });
+});
