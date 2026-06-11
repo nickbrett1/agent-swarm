@@ -171,6 +171,32 @@ function setupMockBrowser(pageOverrides: any = {}, browserOverrides: any = {}) {
     expect(url).toBe('');
   });
 
+  it('should handle edge case where this.page is falsy', async () => {
+    const customHelper = new PuppeteerBrowserHelper({} as any);
+    // initializing PuppeteerBrowserHelper without a page object
+    const url = await customHelper.getPageUrl();
+    expect(url).toBe('');
+  });
+
+  it('should bubble up error if page.url() throws an exception', async () => {
+    const mockUrl = vi.fn().mockImplementation(() => {
+      throw new Error('Page disconnected');
+    });
+    setupMockBrowser({ url: mockUrl });
+
+    await helper.init();
+    await expect(helper.getPageUrl()).rejects.toThrow('Page disconnected');
+  });
+
+  it('should return url when page is about:blank', async () => {
+    const mockUrl = vi.fn().mockReturnValue('about:blank');
+    setupMockBrowser({ url: mockUrl });
+
+    await helper.init();
+    const url = await helper.getPageUrl();
+    expect(url).toBe('about:blank');
+  });
+
   it('should get interactive elements successfully', async () => {
     const mockEvaluate = vi.fn().mockResolvedValue([
       { tag: 'button', type: '', text: 'Submit', placeholder: '', name: '', role: '', xpath: '//button' }
