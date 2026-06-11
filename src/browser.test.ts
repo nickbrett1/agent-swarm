@@ -244,6 +244,49 @@ function setupMockBrowser(pageOverrides: any = {}, browserOverrides: any = {}) {
     waitSpy.mockRestore();
   });
 
+  it('should recover if page.evaluate throws transient detached frame error in getInteractiveElements', async () => {
+    let callCount = 0;
+    const mockEvaluate = vi.fn().mockImplementation(() => {
+      callCount++;
+      if (callCount < 3) {
+        throw new Error("Attempted to use detached Frame '95CB2584FB21941F5737E7A4A726D588'");
+      }
+      return [{ tag: 'button', type: '', text: 'Recovered Success', placeholder: '', name: '', role: '', xpath: '//button' }];
+    });
+    const mockUrl = vi.fn().mockReturnValue('http://example.com/checkout');
+    setupMockBrowser({ evaluate: mockEvaluate, url: mockUrl, waitForNavigation: vi.fn().mockResolvedValue(undefined) });
+
+    await helper.init();
+
+    const waitSpy = vi.spyOn(helper, 'wait').mockResolvedValue(undefined);
+
+    const result = await helper.getInteractiveElements();
+
+    expect(mockEvaluate).toHaveBeenCalledTimes(3);
+    expect(result.elements.length).toBe(1);
+    expect(result.elements[0].text).toBe('Recovered Success');
+
+    waitSpy.mockRestore();
+  });
+
+  it('should handle persistent detached frame error in getInteractiveElements gracefully and return empty list', async () => {
+    const mockEvaluate = vi.fn().mockRejectedValue(new Error("Attempted to use detached Frame '95CB2584FB21941F5737E7A4A726D588'"));
+    const mockUrl = vi.fn().mockReturnValue('http://example.com/checkout');
+    setupMockBrowser({ evaluate: mockEvaluate, url: mockUrl, waitForNavigation: vi.fn().mockResolvedValue(undefined) });
+
+    await helper.init();
+
+    const waitSpy = vi.spyOn(helper, 'wait').mockResolvedValue(undefined);
+
+    const result = await helper.getInteractiveElements();
+
+    expect(mockEvaluate).toHaveBeenCalledTimes(3);
+    expect(result.elements).toEqual([]);
+    expect(result.textSummary).toContain('Warning: Browser is in a transient detached frame state. Waiting for recovery...');
+
+    waitSpy.mockRestore();
+  });
+
   it('should handle success page detected during getInteractiveElements error', async () => {
     const mockEvaluate = vi.fn().mockRejectedValue(new Error('Evaluation failed'));
     const mockUrl = vi.fn().mockReturnValue('http://example.com/success');

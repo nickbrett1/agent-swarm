@@ -323,6 +323,16 @@ export class PuppeteerBrowserHelper {
         }
         
         if (attempts >= maxAttempts) {
+          const isDetachedFrameError = message.toLowerCase().includes("detached") || 
+                                       message.toLowerCase().includes("destroyed") || 
+                                       message.toLowerCase().includes("context");
+          if (isDetachedFrameError) {
+            console.error(`Persistent detached frame error after ${maxAttempts} attempts. Returning empty elements to allow settle/cooldown.`);
+            return {
+              elements: [],
+              textSummary: `Warning: Browser is in a transient detached frame state. Waiting for recovery...`
+            };
+          }
           throw err;
         }
         console.log("Waiting 2 seconds for navigation/redirect to settle before retrying...");
