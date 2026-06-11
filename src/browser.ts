@@ -382,15 +382,17 @@ export class PuppeteerBrowserHelper {
         };
       }
       // Dispose of extra handles we won't use to avoid reference leaks
-      for (let i = 1; i < elements.length; i++) {
-        try {
-          if (elements[i] && typeof elements[i].dispose === 'function') {
-            await elements[i].dispose();
+      await Promise.all(
+        elements.slice(1).map(async (el) => {
+          try {
+            if (el && typeof el.dispose === 'function') {
+              await el.dispose();
+            }
+          } catch (e) {
+            // ignore
           }
-        } catch (e) {
-          // ignore
-        }
-      }
+        })
+      );
       return {
         element: elements[0],
         xpath
