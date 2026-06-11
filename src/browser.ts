@@ -308,16 +308,28 @@ export class PuppeteerBrowserHelper {
           // Ignore timeout or other errors during navigation wait, as they are expected
         }
 
+        // Force Puppeteer to refresh and sync its internal frame tree
+        try {
+          if (this.page) {
+            await this.page.frames();
+          }
+        } catch (e) {
+          // Ignore
+        }
+
         try {
           const url = await this.getPageUrl();
           if (url) {
             const lowerUrl = url.toLowerCase();
             if (lowerUrl.includes("success") ||
                 lowerUrl.includes("thank") ||
-                lowerUrl.includes("complete")) {
-              console.log("Success/thank-you page detected during error. Returning dummy response.");
+                lowerUrl.includes("complete") ||
+                lowerUrl.includes("confirm") ||
+                lowerUrl.includes("receipt") ||
+                lowerUrl.includes("order")) {
+              console.log("Success/thank-you/order page detected during error. Returning dummy response.");
               return {
-              elements: [], 
+                elements: [], 
                 textSummary: `Redirected to success page: ${url}`
               };
             }
@@ -525,6 +537,9 @@ export class PuppeteerBrowserHelper {
 
       // Helper to fill a field in a frame
       async function fillInFrame(frame: Frame, selectors: string[], value: string): Promise<boolean> {
+        if (typeof frame.isDetached === 'function' && frame.isDetached()) {
+          return false;
+        }
         try {
           const combinedSelector = selectors.join(',');
           const handle = await frame.$(combinedSelector);

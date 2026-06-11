@@ -140,7 +140,10 @@ export class ShopperAgent extends Agent<Env, ShopperState> {
         const lowerUrl = currentUrl.toLowerCase();
         if (lowerUrl.includes("success") ||
             lowerUrl.includes("thank") ||
-            lowerUrl.includes("complete")) {
+            lowerUrl.includes("complete") ||
+            lowerUrl.includes("confirm") ||
+            lowerUrl.includes("receipt") ||
+            lowerUrl.includes("order")) {
           console.log(JSON.stringify({ message: "Success page detected. Finishing shopping run.", url: currentUrl }));
           finished = true;
           outcomeSummary = `Successfully completed purchase. Redirected to: ${currentUrl}`;
