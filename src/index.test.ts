@@ -309,3 +309,88 @@ describe('Worker Default Export', () => {
     expect(data.browser.browserTimeSecondsLimit).toBe(600);
   });
 });
+
+describe('ShopperAgent isSafeUrl validation', () => {
+  let agent: any;
+
+  beforeEach(() => {
+    agent = new (ShopperAgent as any)(null, {});
+  });
+
+  it('should allow valid http and https URLs', () => {
+    expect(agent.isSafeUrl('http://example.com')).toBe(true);
+    expect(agent.isSafeUrl('https://example.com/path?query=1')).toBe(true);
+    expect(agent.isSafeUrl('https://8.8.8.8')).toBe(true);
+  });
+
+  it('should reject non-http/https protocols', () => {
+    expect(agent.isSafeUrl('ftp://example.com')).toBe(false);
+    expect(agent.isSafeUrl('file:///etc/passwd')).toBe(false);
+    expect(agent.isSafeUrl('javascript:alert(1)')).toBe(false);
+    expect(agent.isSafeUrl('data:text/html,<html>')).toBe(false);
+  });
+
+  it('should reject local hostnames', () => {
+    expect(agent.isSafeUrl('http://localhost')).toBe(false);
+    expect(agent.isSafeUrl('http://localhost:8080')).toBe(false);
+    expect(agent.isSafeUrl('http://my-service.local')).toBe(false);
+    expect(agent.isSafeUrl('http://api.internal')).toBe(false);
+  });
+
+  it('should reject IPv4 loopback addresses', () => {
+    expect(agent.isSafeUrl('http://127.0.0.1')).toBe(false);
+    expect(agent.isSafeUrl('http://127.1.2.3')).toBe(false);
+    expect(agent.isSafeUrl('http://127.255.255.255')).toBe(false);
+  });
+
+  it('should reject IPv4 private network addresses', () => {
+    // 10.x.x.x
+    expect(agent.isSafeUrl('http://10.0.0.1')).toBe(false);
+    expect(agent.isSafeUrl('http://10.255.255.255')).toBe(false);
+
+    // 172.16.x.x - 172.31.x.x
+    expect(agent.isSafeUrl('http://172.16.0.1')).toBe(false);
+    expect(agent.isSafeUrl('http://172.31.255.255')).toBe(false);
+    expect(agent.isSafeUrl('http://172.20.10.5')).toBe(false);
+    // Should allow 172 outside private range
+    expect(agent.isSafeUrl('http://172.15.0.1')).toBe(true);
+    expect(agent.isSafeUrl('http://172.32.0.1')).toBe(true);
+
+    // 192.168.x.x
+    expect(agent.isSafeUrl('http://192.168.0.1')).toBe(false);
+    expect(agent.isSafeUrl('http://192.168.255.255')).toBe(false);
+  });
+
+  it('should reject IPv4 link-local and current network addresses', () => {
+    // 169.254.x.x
+    expect(agent.isSafeUrl('http://169.254.169.254')).toBe(false);
+    expect(agent.isSafeUrl('http://169.254.0.1')).toBe(false);
+
+    // 0.x.x.x
+    expect(agent.isSafeUrl('http://0.0.0.0')).toBe(false);
+    expect(agent.isSafeUrl('http://0.1.2.3')).toBe(false);
+  });
+
+  it('should reject IPv6 loopback addresses', () => {
+    expect(agent.isSafeUrl('http://[::1]')).toBe(false);
+    expect(agent.isSafeUrl('http://[0:0:0:0:0:0:0:1]')).toBe(false);
+  });
+
+  it('should reject IPv6 Unique Local addresses', () => {
+    expect(agent.isSafeUrl('http://[fc00::1]')).toBe(false);
+    expect(agent.isSafeUrl('http://[fd00:1234::1]')).toBe(false);
+  });
+
+  it('should reject IPv6 Link-local addresses', () => {
+    expect(agent.isSafeUrl('http://[fe80::1]')).toBe(false);
+    expect(agent.isSafeUrl('http://[fe90::1]')).toBe(false);
+    expect(agent.isSafeUrl('http://[fea0::1]')).toBe(false);
+    expect(agent.isSafeUrl('http://[feb0::1]')).toBe(false);
+  });
+
+  it('should handle malformed URLs', () => {
+    expect(agent.isSafeUrl('not a url')).toBe(false);
+    expect(agent.isSafeUrl('')).toBe(false);
+    expect(agent.isSafeUrl('http://')).toBe(false);
+  });
+});
