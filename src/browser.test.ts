@@ -20,7 +20,7 @@ vi.mock('@cloudflare/puppeteer', () => ({
 describe('PuppeteerBrowserHelper', () => {
 
 function setupMockBrowser(pageOverrides: any = {}, browserOverrides: any = {}) {
-  const mockPage = {
+  const mockPage: any = {
     setViewport: vi.fn(),
     setDefaultTimeout: vi.fn(),
     setRequestInterception: vi.fn().mockResolvedValue(true),
@@ -30,6 +30,26 @@ function setupMockBrowser(pageOverrides: any = {}, browserOverrides: any = {}) {
     evaluate: vi.fn(),
     ...pageOverrides,
   };
+
+  const mockFrame = {
+    executionContext: vi.fn().mockResolvedValue({
+      evaluate: vi.fn().mockImplementation((fn, ...args) => {
+        if (mockPage.evaluate) {
+          return mockPage.evaluate(fn, ...args);
+        }
+        return typeof fn === 'function' ? fn(...args) : undefined;
+      })
+    }),
+    evaluate: vi.fn().mockImplementation((fn, ...args) => {
+      if (mockPage.evaluate) {
+        return mockPage.evaluate(fn, ...args);
+      }
+      return typeof fn === 'function' ? fn(...args) : undefined;
+    })
+  };
+
+  mockPage.mainFrame = vi.fn().mockReturnValue(mockFrame);
+
   const mockBrowser = {
     newPage: vi.fn().mockResolvedValue(mockPage),
     ...browserOverrides,

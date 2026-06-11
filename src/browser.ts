@@ -464,7 +464,7 @@ export class PuppeteerBrowserHelper {
 
     // Fallback: evaluate click directly via JS if element is null or native click failed
     try {
-      const clicked = await this.page.evaluate((xp) => {
+      const clicked = await this.page.evaluate((xp: any) => {
         const res = document.evaluate(xp, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
         const node = res.singleNodeValue as HTMLElement;
         if (node) {
