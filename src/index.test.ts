@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import workerDefault, { ShopperAgent } from './index.js';
+import workerDefault, { ShopperAgent, verifyHmacSignature } from './index.js';
 
 vi.mock('@cloudflare/puppeteer', () => ({
   default: {
@@ -185,6 +185,76 @@ describe('ShopperAgent queryLLM Fallback Logic', () => {
 
     await promise;
     vi.useRealTimers();
+  });
+});
+
+describe('verifyHmacSignature', () => {
+  const secret = 'test-secret';
+
+  async function generateTestSignature(expiryStr: string, overrideSecret = secret) {
+    const encoder = new TextEncoder();
+    const key = await crypto.subtle.importKey(
+      'raw',
+      encoder.encode(overrideSecret),
+      { name: 'HMAC', hash: 'SHA-256' },
+      false,
+      ['sign']
+    );
+    const sigBuffer = await crypto.subtle.sign('HMAC', key, encoder.encode(expiryStr));
+    return Array.from(new Uint8Array(sigBuffer))
+      .map(b => b.toString(16).padStart(2, '0'))
+      .join('');
+  }
+
+  it('should return true for a valid signature and unexpired token', async () => {
+    const expiry = (Date.now() + 100000).toString();
+    const signature = await generateTestSignature(expiry);
+    const result = await verifyHmacSignature(expiry, signature, secret);
+    expect(result).toBe(true);
+  });
+
+  it('should return false if token is expired', async () => {
+    const expiry = (Date.now() - 100000).toString();
+    const signature = await generateTestSignature(expiry);
+    const result = await verifyHmacSignature(expiry, signature, secret);
+    expect(result).toBe(false);
+  });
+
+  it('should return false if expiry is not a valid number', async () => {
+    const expiry = 'invalid-expiry';
+    const signature = await generateTestSignature(expiry);
+    const result = await verifyHmacSignature(expiry, signature, secret);
+    expect(result).toBe(false);
+  });
+
+  it('should return false for missing expiry or signature', async () => {
+    expect(await verifyHmacSignature(null, 'some-sig', secret)).toBe(false);
+    expect(await verifyHmacSignature('12345', null, secret)).toBe(false);
+    expect(await verifyHmacSignature(null, null, secret)).toBe(false);
+  });
+
+  it('should return false for invalid signature format', async () => {
+    const expiry = (Date.now() + 100000).toString();
+    expect(await verifyHmacSignature(expiry, 'invalid-hex-format', secret)).toBe(false);
+  });
+
+  it('should return false if signature does not match', async () => {
+    const expiry = (Date.now() + 100000).toString();
+    const validSignature = await generateTestSignature(expiry);
+    // alter the signature
+    const invalidSignature = 'ff' + validSignature.substring(2);
+    expect(await verifyHmacSignature(expiry, invalidSignature, secret)).toBe(false);
+  });
+
+  it('should return false if signature verification throws an error', async () => {
+    // A malformed signature hex length (e.g. odd number of characters)
+    // will cause match(/.{1,2}/g) to potentially return an unexpected result,
+    // but a non-hex string with even length will map to NaN when parseInt is called.
+    // subtle.verify throws an error if the signature length is incorrect for SHA-256 HMAC (which is 32 bytes).
+    const expiry = (Date.now() + 100000).toString();
+    // A 4-byte signature hex (8 characters) instead of the expected 32-byte (64 characters)
+    const shortSignature = 'deadbeef';
+    expect(await verifyHmacSignature(expiry, shortSignature, secret)).toBe(false);
   });
 });
 

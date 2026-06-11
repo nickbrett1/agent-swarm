@@ -437,7 +437,7 @@ ${textSummary}
 }
 
 // Helper to verify the SvelteKit HMAC signature
-async function verifyHmacSignature(
+export async function verifyHmacSignature(
   expiryStr: string | null,
   signatureHex: string | null,
   secret: string
