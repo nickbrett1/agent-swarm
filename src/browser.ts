@@ -145,12 +145,17 @@ export class PuppeteerBrowserHelper {
     // Block unnecessary requests (images, media, fonts) to save bandwidth and execution time
     try {
       await this.page.setRequestInterception(true);
-      this.page.on("request", (req) => {
-        const resourceType = req.resourceType();
-        if (["image", "media", "font"].includes(resourceType)) {
-          req.abort();
-        } else {
-          req.continue();
+      this.page.on("request", async (req) => {
+        try {
+          const resourceType = req.resourceType();
+          if (["image", "media", "font"].includes(resourceType)) {
+            await req.abort();
+          } else {
+            await req.continue();
+          }
+        } catch (err) {
+          // Ignore request interception errors as they are common during navigation/closing
+          console.debug("Request interception failed:", err);
         }
       });
     } catch (interceptErr) {
