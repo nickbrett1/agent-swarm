@@ -46,24 +46,28 @@ export class ShopperAgent extends Agent<Env, ShopperState> {
    * Helper to determine if an IP address is private/local.
    */
   private isPrivateIp(ip: string): boolean {
-    const ipv4Regex = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/;
-    const match4 = ip.match(ipv4Regex);
-    if (match4) {
-      const octet1 = parseInt(match4[1], 10);
-      const octet2 = parseInt(match4[2], 10);
+    // Check IPv4 using split to avoid Regex vulnerabilities
+    if (ip.includes('.')) {
+      const parts = ip.split('.');
+      if (parts.length === 4) {
+        const octet1 = parseInt(parts[0], 10);
+        const octet2 = parseInt(parts[1], 10);
 
-      // 127.x.x.x (Loopback)
-      if (octet1 === 127) return true;
-      // 10.x.x.x (Private)
-      if (octet1 === 10) return true;
-      // 172.16.x.x - 172.31.x.x (Private)
-      if (octet1 === 172 && octet2 >= 16 && octet2 <= 31) return true;
-      // 192.168.x.x (Private)
-      if (octet1 === 192 && octet2 === 168) return true;
-      // 169.254.x.x (Link-local / AWS metadata)
-      if (octet1 === 169 && octet2 === 254) return true;
-      // 0.x.x.x (Current network)
-      if (octet1 === 0) return true;
+        if (!isNaN(octet1) && !isNaN(octet2)) {
+          // 127.x.x.x (Loopback)
+          if (octet1 === 127) return true;
+          // 10.x.x.x (Private)
+          if (octet1 === 10) return true;
+          // 172.16.x.x - 172.31.x.x (Private)
+          if (octet1 === 172 && octet2 >= 16 && octet2 <= 31) return true;
+          // 192.168.x.x (Private)
+          if (octet1 === 192 && octet2 === 168) return true;
+          // 169.254.x.x (Link-local / AWS metadata)
+          if (octet1 === 169 && octet2 === 254) return true;
+          // 0.x.x.x (Current network)
+          if (octet1 === 0) return true;
+        }
+      }
     }
 
     const ipv6 = ip.toLowerCase();
