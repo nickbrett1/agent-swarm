@@ -53,8 +53,7 @@ export class PuppeteerBrowserHelper {
       if (!sessions || sessions.length === 0) {
         return 0;
       }
-      let clearedCount = 0;
-      for (const s of sessions) {
+      const deletePromises = sessions.map(async (s) => {
         const sessionId = s.sessionId || (s as { id?: string }).id;
         if (sessionId) {
           console.log(`Closing stale session: ${sessionId}`);
@@ -63,12 +62,14 @@ export class PuppeteerBrowserHelper {
           });
           const delText = await delRes.text();
           console.log(`Delete response for ${sessionId}: status=${delRes.status}, body=${delText}`);
-          clearedCount++;
+          return 1;
         } else {
           console.warn("Stale session has no sessionId or id:", JSON.stringify(s));
+          return 0;
         }
-      }
-      return clearedCount;
+      });
+      const results = await Promise.all(deletePromises);
+      return results.reduce((acc: number, curr: number) => acc + curr, 0);
     } catch (clearErr) {
       console.error("Failed to clear stale sessions:", clearErr);
     }
