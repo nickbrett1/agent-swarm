@@ -10,6 +10,9 @@ export default defineConfig({
       include: ['src/**/*.ts'],
       exclude: ['src/**/*.test.ts']
     },
-    reporters: ['default', 'junit']
+    reporters: ['default', 'junit'],
+    outputFile: {
+      junit: 'junit.xml'
+    }
   }
 });

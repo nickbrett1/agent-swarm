@@ -4,8 +4,6 @@ import puppeteer, { BrowserWorker } from "@cloudflare/puppeteer";
 import type { Ai } from "@cloudflare/workers-types";
 import ipaddr from "ipaddr.js";
 
-const agentCallable = callable as (...args: any[]) => any;
-
 export interface Env {
   MYBROWSER: BrowserWorker;
   AI: Ai;
@@ -145,7 +143,8 @@ export class ShopperAgent extends Agent<Env, ShopperState> {
   /**
    * RPC Endpoint to trigger a shopping run.
    */
-  @agentCallable()
+  // @ts-ignore
+  @callable()
   async runShopping(persona: string, url?: string): Promise<string> {
     this.setState({
       persona,
@@ -180,15 +179,17 @@ export class ShopperAgent extends Agent<Env, ShopperState> {
 
       while (step < maxSteps && !finished) {
         step++;
-        console.log(`--- Step ${step} ---`);
         
         // Check if the current URL is a success/thank-you/complete page
         const currentUrl = await helper.getPageUrl();
         const lowerUrl = currentUrl.toLowerCase();
         if (lowerUrl.includes("success") ||
             lowerUrl.includes("thank") ||
-            lowerUrl.includes("complete")) {
-          console.log(`Success page detected: ${currentUrl}. Finishing shopping run.`);
+            lowerUrl.includes("complete") ||
+            lowerUrl.includes("confirm") ||
+            lowerUrl.includes("receipt") ||
+            lowerUrl.includes("order")) {
+          console.log(JSON.stringify({ message: "Success page detected. Finishing shopping run.", url: currentUrl }));
           finished = true;
           outcomeSummary = `Successfully completed purchase. Redirected to: ${currentUrl}`;
           this.setState({ ...this.state, status: "completed" });
@@ -197,8 +198,11 @@ export class ShopperAgent extends Agent<Env, ShopperState> {
 
         // 1. Get current page elements
         const pageData = await helper.getInteractiveElements();
-        console.log(`Page URL: ${currentUrl}`);
-        console.log(`Interactive nodes count: ${pageData.elements.length}`);
+        console.log(JSON.stringify({
+          step,
+          url: currentUrl,
+          interactiveNodesCount: pageData.elements.length
+        }));
 
         // 2. Build the LLM prompt
         const { systemPrompt, userPrompt } = this.buildLLMPrompt(persona, pageData.textSummary, this.state.history);
@@ -211,7 +215,7 @@ export class ShopperAgent extends Agent<Env, ShopperState> {
         if (logDecision.text) {
           logDecision.text = "***REDACTED***";
         }
-        console.log("LLM Decision:", JSON.stringify(logDecision, null, 2));
+        console.log(JSON.stringify({ message: "LLM Decision", decision: logDecision }));
 
         const actionLog = `Step ${step}: ${decision.explanation} -> Action: ${decision.action}${decision.targetId ? ' on ' + decision.targetId : ''}${decision.text ? ' value="***REDACTED***"' : ''}`;
         this.setState({
@@ -237,14 +241,32 @@ export class ShopperAgent extends Agent<Env, ShopperState> {
                 lowerText.includes("purchase");
             }
 
+            const startUrl = await helper.getPageUrl();
+
             const clickOk = await helper.clickElement(decision.targetId);
             if (!clickOk) {
-              console.warn(`Click on ${decision.targetId} failed, trying to find alternatives...`);
+              console.warn(JSON.stringify({ message: "Click failed, trying to find alternatives...", targetId: decision.targetId }));
             }
 
             if (isPayOrSubmit) {
-              console.log("Pay/Submit/Buy button clicked, waiting 4 seconds for transaction/navigation to settle...");
-              await helper.wait(4000);
+              console.log(JSON.stringify({ message: "Pay/Submit/Buy button clicked, waiting for navigation/redirect to settle..." }));
+              const startTime = Date.now();
+              const timeout = 12000;
+              let urlChanged = false;
+              while (Date.now() - startTime < timeout) {
+                await helper.wait(500);
+                const currentUrl = await helper.getPageUrl();
+                if (currentUrl !== startUrl) {
+                  urlChanged = true;
+                  console.log(JSON.stringify({ message: `URL changed from ${startUrl} to ${currentUrl}. Waiting 2.5s for page load settle...` }));
+                  await helper.wait(2500);
+                  break;
+                }
+              }
+              if (!urlChanged) {
+                console.log(JSON.stringify({ message: "URL did not change after click within timeout. Cooldown 2s." }));
+                await helper.wait(2000);
+              }
             } else {
               await helper.wait(1500); // Wait for dynamic layout/routing
             }
@@ -257,7 +279,7 @@ export class ShopperAgent extends Agent<Env, ShopperState> {
             }
             const typeOk = await helper.typeElement(decision.targetId, decision.text);
             if (!typeOk) {
-              console.warn(`Type into ${decision.targetId} failed.`);
+              console.warn(JSON.stringify({ message: "Type failed.", targetId: decision.targetId }));
             }
             break;
           }
@@ -273,19 +295,19 @@ export class ShopperAgent extends Agent<Env, ShopperState> {
               throw new Error("Missing required Stripe test credentials in environment configuration.");
             }
 
-            console.log("Filling Stripe checkout details...");
+            console.log(JSON.stringify({ message: "Filling Stripe checkout details..." }));
             const stripeOk = await helper.handleStripeIframe(card, expiry, cvc, name);
             if (stripeOk) {
-              console.log("Stripe card credentials filled successfully.");
+              console.log(JSON.stringify({ message: "Stripe card credentials filled successfully." }));
             } else {
-              console.warn("Could not find Stripe inputs. Continuing in case fields are on main page...");
+              console.warn(JSON.stringify({ message: "Could not find Stripe inputs. Continuing in case fields are on main page..." }));
             }
             await helper.wait(1000);
             break;
           }
 
           case "wait": {
-            console.log("Waiting 3 seconds...");
+            console.log(JSON.stringify({ message: "Waiting 3 seconds..." }));
             await helper.wait(3000);
             break;
           }
@@ -346,9 +368,11 @@ Decide the single next action to take. You must output a JSON object matching th
 Guidelines:
 1. Review the element IDs closely. Choose the ID that best aligns with your next step.
 2. If you are looking at a product catalog, click the "Buy Now" or "Add to Cart" button for a product matching the persona.
-3. If you are on the Checkout page and see Credit Card, Expiration, or CVC inputs, use the "stripe_fill" action (which will autofill these inputs inside the iframe).
-4. If you have submitted the payment and see a Success or Thank You page, output the "finish" action with a final success summary.
-5. RESPOND WITH A RAW JSON OBJECT ONLY. DO NOT WRAP IT IN MARKDOWN CODE BLOCKS OR EXTRA TEXT.`;
+3. Do NOT click "Login" or other account/profile buttons on the shop catalog page. The checkout process does not require logging in.
+4. If you are on the Checkout page and see Credit Card, Expiration, or CVC inputs, use the "stripe_fill" action (which will autofill these inputs inside the iframe).
+5. After filling the card details using the "stripe_fill" action, you must find and click the "Pay", "Submit", or "Place Order" button using the "click" action to process the transaction. Do NOT run "stripe_fill" again to submit.
+6. If you have submitted the payment and see a Success or Thank You page, output the "finish" action with a final success summary.
+7. RESPOND WITH A RAW JSON OBJECT ONLY. DO NOT WRAP IT IN MARKDOWN CODE BLOCKS OR EXTRA TEXT.`;
 
     const userPrompt = `Your persona configuration: ${persona}
 
@@ -482,7 +506,7 @@ ${textSummary}
 }
 
 // Helper to verify the SvelteKit HMAC signature
-async function verifyHmacSignature(
+export async function verifyHmacSignature(
   expiryStr: string | null,
   signatureHex: string | null,
   secret: string
@@ -527,6 +551,16 @@ async function verifyHmacSignature(
   }
 }
 
+const ALLOWED_ORIGINS = ["https://fintechnick.com", "http://localhost:3000"];
+
+function getCorsOrigin(request: Request): string {
+  const origin = request.headers.get("Origin");
+  if (origin && ALLOWED_ORIGINS.includes(origin)) {
+    return origin;
+  }
+  return ALLOWED_ORIGINS[0];
+}
+
 export default {
   async fetch(request: Request, env: Env) {
     const url = new URL(request.url);
@@ -536,7 +570,7 @@ export default {
       return new Response(null, {
         status: 204,
         headers: {
-          "Access-Control-Allow-Origin": "*",
+          "Access-Control-Allow-Origin": getCorsOrigin(request),
           "Access-Control-Allow-Methods": "GET, OPTIONS",
           "Access-Control-Allow-Headers": "Content-Type"
         }
@@ -589,7 +623,7 @@ export default {
         status: 200,
         headers: {
           "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": "*",
+          "Access-Control-Allow-Origin": getCorsOrigin(request),
           "Access-Control-Allow-Methods": "GET, OPTIONS",
           "Access-Control-Allow-Headers": "Content-Type"
         }
@@ -637,7 +671,7 @@ export default {
         status: 200,
         headers: {
           "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": "*",
+          "Access-Control-Allow-Origin": getCorsOrigin(request),
           "Access-Control-Allow-Methods": "GET, OPTIONS",
           "Access-Control-Allow-Headers": "Content-Type"
         }
