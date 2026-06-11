@@ -3,8 +3,6 @@ import { PuppeteerBrowserHelper } from "./browser.js";
 import puppeteer, { BrowserWorker } from "@cloudflare/puppeteer";
 import type { Ai } from "@cloudflare/workers-types";
 
-const agentCallable = callable as (...args: any[]) => any;
-
 export interface Env {
   MYBROWSER: BrowserWorker;
   AI: Ai;
@@ -101,7 +99,8 @@ export class ShopperAgent extends Agent<Env, ShopperState> {
   /**
    * RPC Endpoint to trigger a shopping run.
    */
-  @agentCallable()
+  // @ts-ignore
+  @callable()
   async runShopping(persona: string, url?: string): Promise<string> {
     this.setState({
       persona,
