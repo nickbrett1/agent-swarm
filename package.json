@@ -14,10 +14,12 @@
   "dependencies": {
     "@cloudflare/puppeteer": "latest",
     "agents": "latest",
+    "is-ip": "^5.0.1",
     "vitest": "^4.1.8"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20260608.1",
+    "@types/is-ip": "^2.0.2",
     "@vitest/coverage-v8": "^4.1.8",
     "typescript": "^5.4.5",
     "wrangler": "4.95.0"

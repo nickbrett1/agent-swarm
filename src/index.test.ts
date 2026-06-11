@@ -31,6 +31,66 @@ vi.mock('agents', () => ({
   callable: () => () => {},
 }));
 
+describe('ShopperAgent isSafeUrl Logic', () => {
+  let mockFetch: any;
+
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    mockFetch = vi.fn();
+    globalThis.fetch = mockFetch;
+
+    // Default fetch behavior for DNS DoH requests (no answers)
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({ Answer: [] })
+    });
+  });
+
+  it('should allow a regular external domain', async () => {
+    const env = {};
+    const agent = new (ShopperAgent as any)(null, env);
+    const isSafe = await agent.isSafeUrl('https://example.com/shop');
+    expect(isSafe).toBe(true);
+  });
+
+  it('should block local ip addresses directly', async () => {
+    const env = {};
+    const agent = new (ShopperAgent as any)(null, env);
+    expect(await agent.isSafeUrl('http://127.0.0.1/')).toBe(false);
+    expect(await agent.isSafeUrl('http://10.0.0.1/')).toBe(false);
+    expect(await agent.isSafeUrl('http://192.168.1.1/')).toBe(false);
+    expect(await agent.isSafeUrl('http://169.254.169.254/')).toBe(false);
+    expect(await agent.isSafeUrl('http://[::1]/')).toBe(false);
+  });
+
+  it('should block localhost and .local domains directly', async () => {
+    const env = {};
+    const agent = new (ShopperAgent as any)(null, env);
+    expect(await agent.isSafeUrl('http://localhost:8080/')).toBe(false);
+    expect(await agent.isSafeUrl('http://my-service.local/')).toBe(false);
+    expect(await agent.isSafeUrl('http://internal-db.internal/')).toBe(false);
+  });
+
+  it('should block external domain that resolves to a private IP via DNS', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ Answer: [{ type: 1, data: '127.0.0.1' }] })
+    });
+
+    const env = {};
+    const agent = new (ShopperAgent as any)(null, env);
+    const isSafe = await agent.isSafeUrl('http://localtest.me/admin');
+    expect(isSafe).toBe(false);
+  });
+
+  it('should allow external IP addresses directly', async () => {
+    const env = {};
+    const agent = new (ShopperAgent as any)(null, env);
+    const isSafe = await agent.isSafeUrl('http://1.1.1.1/shop');
+    expect(isSafe).toBe(true);
+  });
+});
+
 describe('ShopperAgent queryLLM Fallback Logic', () => {
   let mockFetch: any;
 
