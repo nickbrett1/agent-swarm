@@ -271,6 +271,70 @@ function setupMockBrowser(pageOverrides: any = {}, browserOverrides: any = {}) {
     expect(typeResult).toBe(false);
   });
 
+  describe('findElement', () => {
+    it('should throw error if browser is not initialized', async () => {
+      await expect((helper as any).findElement('some_id')).rejects.toThrow('Browser not initialized');
+    });
+
+    it('should return null and warn if ID is not found in elementsMap', async () => {
+      setupMockBrowser();
+      await helper.init();
+      const consoleSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+      const result = await (helper as any).findElement('missing_id');
+
+      expect(result).toBeNull();
+      expect(consoleSpy).toHaveBeenCalledWith('Element ID missing_id not found in map');
+      consoleSpy.mockRestore();
+    });
+
+    it('should return element: null if page.$$ returns no elements', async () => {
+      const { mockPage } = setupMockBrowser();
+      mockPage.$$ = vi.fn().mockResolvedValue([]);
+      await helper.init();
+      (helper as any).elementsMap.set('test_id', '//button');
+
+      const result = await (helper as any).findElement('test_id');
+
+      expect(result).toEqual({ element: null, xpath: '//button' });
+      expect(mockPage.$$).toHaveBeenCalledWith('xpath///button');
+    });
+
+    it('should return first element and dispose of the rest safely', async () => {
+      const element1 = { id: 1, dispose: vi.fn() };
+      const element2 = { id: 2, dispose: vi.fn().mockRejectedValue(new Error('Dispose error')) };
+      const element3 = { id: 3 }; // no dispose method
+      const element4 = { id: 4, dispose: vi.fn() };
+
+      const { mockPage } = setupMockBrowser();
+      mockPage.$$ = vi.fn().mockResolvedValue([element1, element2, element3, element4]);
+      await helper.init();
+      (helper as any).elementsMap.set('test_id', '//div');
+
+      const result = await (helper as any).findElement('test_id');
+
+      expect(result).toEqual({ element: element1, xpath: '//div' });
+      expect(element2.dispose).toHaveBeenCalled();
+      expect(element4.dispose).toHaveBeenCalled();
+      // element1 is the one returned, it should NOT be disposed
+      expect(element1.dispose).not.toHaveBeenCalled();
+    });
+
+    it('should catch errors during page.$$ and return null', async () => {
+      const { mockPage } = setupMockBrowser();
+      mockPage.$$ = vi.fn().mockRejectedValue(new Error('Query failed'));
+      await helper.init();
+      (helper as any).elementsMap.set('test_id', '//span');
+
+      const consoleSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+      const result = await (helper as any).findElement('test_id');
+
+      expect(result).toBeNull();
+      expect(consoleSpy).toHaveBeenCalledWith('Error querying element test_id with xpath //span:', 'Query failed');
+      consoleSpy.mockRestore();
+    });
+  });
 
   function setupInteractionMock(typeFn: any = vi.fn(), tag = 'input') {
     const mockEvaluate = vi.fn().mockResolvedValue([{ tag, type: 'text', text: '', placeholder: '', name: '', role: '', xpath: `//${tag}` }]);
