@@ -305,14 +305,17 @@ export class PuppeteerBrowserHelper {
 
         try {
           const url = await this.getPageUrl();
-          if (url && (url.toLowerCase().includes("success") || 
-              url.toLowerCase().includes("thank") || 
-              url.toLowerCase().includes("complete"))) {
-            console.log("Success/thank-you page detected during error. Returning dummy response.");
-            return { 
+          if (url) {
+            const lowerUrl = url.toLowerCase();
+            if (lowerUrl.includes("success") ||
+                lowerUrl.includes("thank") ||
+                lowerUrl.includes("complete")) {
+              console.log("Success/thank-you page detected during error. Returning dummy response.");
+              return {
               elements: [], 
-              textSummary: `Redirected to success page: ${url}` 
-            };
+                textSummary: `Redirected to success page: ${url}`
+              };
+            }
           }
         } catch (urlErr) {
           const urlErrMsg = urlErr instanceof Error ? urlErr.message : String(urlErr);
