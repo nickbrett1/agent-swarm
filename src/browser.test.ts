@@ -97,18 +97,12 @@ function setupMockBrowser(pageOverrides: any = {}, browserOverrides: any = {}) {
     expect(mockClose).toHaveBeenCalled();
   });
 
-  it('should expose limits on initial launch rate limit error', async () => {
-    setupMockBrowser();
-    const rateLimitError = new Error('Unable to create new browser: code: 429: message: Rate limit exceeded');
-    (puppeteer.launch as any).mockRejectedValue(rateLimitError);
-
-    const mockLimits = {
-      activeSessions: [{ id: '1' }, { id: '2' }],
-      maxConcurrentSessions: 2,
-      allowedBrowserAcquisitions: 0,
-      timeUntilNextAllowedBrowserAcquisition: 5000,
-    };
-
+  async function testRateLimitError(
+    launchMockSetup: () => void,
+    mockLimits: any,
+    expectedMessage: string
+  ) {
+    launchMockSetup();
     const originalLimits = puppeteer.limits;
     puppeteer.limits = vi.fn().mockResolvedValue(mockLimits) as any;
 
@@ -116,38 +110,47 @@ function setupMockBrowser(pageOverrides: any = {}, browserOverrides: any = {}) {
       await helper.init();
       throw new Error('Should have thrown an error');
     } catch (err: any) {
-      expect(err.message).toContain('Cloudflare Limits: Active Sessions=2/2, Acquisitions Allowed=0, Time Until Next Acquisition=5000ms');
+      expect(err.message).toContain(expectedMessage);
     } finally {
       puppeteer.limits = originalLimits;
     }
+  }
+
+  it('should expose limits on initial launch rate limit error', async () => {
+    await testRateLimitError(
+      () => {
+        setupMockBrowser();
+        const rateLimitError = new Error('Unable to create new browser: code: 429: message: Rate limit exceeded');
+        (puppeteer.launch as any).mockRejectedValue(rateLimitError);
+      },
+      {
+        activeSessions: [{ id: '1' }, { id: '2' }],
+        maxConcurrentSessions: 2,
+        allowedBrowserAcquisitions: 0,
+        timeUntilNextAllowedBrowserAcquisition: 5000,
+      },
+      'Cloudflare Limits: Active Sessions=2/2, Acquisitions Allowed=0, Time Until Next Acquisition=5000ms'
+    );
   });
 
   it('should expose limits on retry launch rate limit error', async () => {
-    setupMockBrowser();
-    const initialError = new Error('Some other launch error');
-    const rateLimitError = new Error('Unable to create new browser: code: 429: message: Rate limit exceeded');
-    (puppeteer.launch as any)
-      .mockRejectedValueOnce(initialError)
-      .mockRejectedValue(rateLimitError);
-
-    const mockLimits = {
-      activeSessions: [{ id: '1' }],
-      maxConcurrentSessions: 2,
-      allowedBrowserAcquisitions: 0,
-      timeUntilNextAllowedBrowserAcquisition: 3000,
-    };
-
-    const originalLimits = puppeteer.limits;
-    puppeteer.limits = vi.fn().mockResolvedValue(mockLimits) as any;
-
-    try {
-      await helper.init();
-      throw new Error('Should have thrown an error');
-    } catch (err: any) {
-      expect(err.message).toContain('Cloudflare Limits: Active Sessions=1/2, Acquisitions Allowed=0, Time Until Next Acquisition=3000ms');
-    } finally {
-      puppeteer.limits = originalLimits;
-    }
+    await testRateLimitError(
+      () => {
+        setupMockBrowser();
+        const initialError = new Error('Some other launch error');
+        const rateLimitError = new Error('Unable to create new browser: code: 429: message: Rate limit exceeded');
+        (puppeteer.launch as any)
+          .mockRejectedValueOnce(initialError)
+          .mockRejectedValue(rateLimitError);
+      },
+      {
+        activeSessions: [{ id: '1' }],
+        maxConcurrentSessions: 2,
+        allowedBrowserAcquisitions: 0,
+        timeUntilNextAllowedBrowserAcquisition: 3000,
+      },
+      'Cloudflare Limits: Active Sessions=1/2, Acquisitions Allowed=0, Time Until Next Acquisition=3000ms'
+    );
   });
 
   it('should ignore close if a string error is thrown', async () => {
@@ -237,6 +240,26 @@ function setupMockBrowser(pageOverrides: any = {}, browserOverrides: any = {}) {
     await expect(helper.getInteractiveElements()).rejects.toThrow('Browser not initialized');
   });
 
+  async function testInteractiveElementsFailure(
+    evaluateMock: any,
+    url: string,
+    assertions: (result: any) => void
+  ) {
+    setupMockBrowser({
+      evaluate: evaluateMock,
+      url: vi.fn().mockReturnValue(url),
+      waitForNavigation: vi.fn().mockResolvedValue(undefined)
+    });
+
+    await helper.init();
+    const waitSpy = vi.spyOn(helper, 'wait').mockResolvedValue(undefined);
+
+    const result = await helper.getInteractiveElements();
+    assertions(result);
+
+    waitSpy.mockRestore();
+  }
+
   it('should handle errors in getInteractiveElements and retry', async () => {
     let callCount = 0;
     const mockEvaluate = vi.fn().mockImplementation(() => {
@@ -247,21 +270,11 @@ function setupMockBrowser(pageOverrides: any = {}, browserOverrides: any = {}) {
       return [{ tag: 'button', type: '', text: 'Retry Success', placeholder: '', name: '', role: '', xpath: '//button' }];
     });
 
-    const mockUrl = vi.fn().mockReturnValue('https://example.com');
-    setupMockBrowser({ evaluate: mockEvaluate, url: mockUrl, waitForNavigation: vi.fn().mockResolvedValue(undefined) });
-
-    await helper.init();
-
-    // We mock wait to resolve immediately
-    const waitSpy = vi.spyOn(helper, 'wait').mockResolvedValue(undefined);
-
-    const result = await helper.getInteractiveElements();
-
-    expect(mockEvaluate).toHaveBeenCalledTimes(3);
-    expect(result.elements.length).toBe(1);
-    expect(result.elements[0].text).toBe('Retry Success');
-
-    waitSpy.mockRestore();
+    await testInteractiveElementsFailure(mockEvaluate, 'https://example.com', (result) => {
+      expect(mockEvaluate).toHaveBeenCalledTimes(3);
+      expect(result.elements.length).toBe(1);
+      expect(result.elements[0].text).toBe('Retry Success');
+    });
   });
 
   it('should recover if page.evaluate throws transient detached frame error in getInteractiveElements', async () => {
@@ -273,38 +286,22 @@ function setupMockBrowser(pageOverrides: any = {}, browserOverrides: any = {}) {
       }
       return [{ tag: 'button', type: '', text: 'Recovered Success', placeholder: '', name: '', role: '', xpath: '//button' }];
     });
-    const mockUrl = vi.fn().mockReturnValue('https://example.com/checkout');
-    setupMockBrowser({ evaluate: mockEvaluate, url: mockUrl, waitForNavigation: vi.fn().mockResolvedValue(undefined) });
 
-    await helper.init();
-
-    const waitSpy = vi.spyOn(helper, 'wait').mockResolvedValue(undefined);
-
-    const result = await helper.getInteractiveElements();
-
-    expect(mockEvaluate).toHaveBeenCalledTimes(3);
-    expect(result.elements.length).toBe(1);
-    expect(result.elements[0].text).toBe('Recovered Success');
-
-    waitSpy.mockRestore();
+    await testInteractiveElementsFailure(mockEvaluate, 'https://example.com/checkout', (result) => {
+      expect(mockEvaluate).toHaveBeenCalledTimes(3);
+      expect(result.elements.length).toBe(1);
+      expect(result.elements[0].text).toBe('Recovered Success');
+    });
   });
 
   it('should handle persistent detached frame error in getInteractiveElements gracefully and return empty list', async () => {
     const mockEvaluate = vi.fn().mockRejectedValue(new Error("Attempted to use detached Frame '95CB2584FB21941F5737E7A4A726D588'"));
-    const mockUrl = vi.fn().mockReturnValue('https://example.com/checkout');
-    setupMockBrowser({ evaluate: mockEvaluate, url: mockUrl, waitForNavigation: vi.fn().mockResolvedValue(undefined) });
 
-    await helper.init();
-
-    const waitSpy = vi.spyOn(helper, 'wait').mockResolvedValue(undefined);
-
-    const result = await helper.getInteractiveElements();
-
-    expect(mockEvaluate).toHaveBeenCalledTimes(3);
-    expect(result.elements).toEqual([]);
-    expect(result.textSummary).toContain('Warning: Browser is in a transient detached frame state. Waiting for recovery...');
-
-    waitSpy.mockRestore();
+    await testInteractiveElementsFailure(mockEvaluate, 'https://example.com/checkout', (result) => {
+      expect(mockEvaluate).toHaveBeenCalledTimes(3);
+      expect(result.elements).toEqual([]);
+      expect(result.textSummary).toContain('Warning: Browser is in a transient detached frame state. Waiting for recovery...');
+    });
   });
 
   it('should handle success page detected during getInteractiveElements error', async () => {

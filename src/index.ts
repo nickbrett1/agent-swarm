@@ -196,14 +196,32 @@ export class ShopperAgent extends Agent<Env, ShopperState> {
                 lowerText.includes("purchase");
             }
 
+            const startUrl = await helper.getPageUrl();
+
             const clickOk = await helper.clickElement(decision.targetId);
             if (!clickOk) {
               console.warn(JSON.stringify({ message: "Click failed, trying to find alternatives...", targetId: decision.targetId }));
             }
 
             if (isPayOrSubmit) {
-              console.log(JSON.stringify({ message: "Pay/Submit/Buy button clicked, waiting 4 seconds for transaction/navigation to settle..." }));
-              await helper.wait(4000);
+              console.log(JSON.stringify({ message: "Pay/Submit/Buy button clicked, waiting for navigation/redirect to settle..." }));
+              const startTime = Date.now();
+              const timeout = 12000;
+              let urlChanged = false;
+              while (Date.now() - startTime < timeout) {
+                await helper.wait(500);
+                const currentUrl = await helper.getPageUrl();
+                if (currentUrl !== startUrl) {
+                  urlChanged = true;
+                  console.log(JSON.stringify({ message: `URL changed from ${startUrl} to ${currentUrl}. Waiting 2.5s for page load settle...` }));
+                  await helper.wait(2500);
+                  break;
+                }
+              }
+              if (!urlChanged) {
+                console.log(JSON.stringify({ message: "URL did not change after click within timeout. Cooldown 2s." }));
+                await helper.wait(2000);
+              }
             } else {
               await helper.wait(1500); // Wait for dynamic layout/routing
             }
@@ -305,10 +323,11 @@ Decide the single next action to take. You must output a JSON object matching th
 Guidelines:
 1. Review the element IDs closely. Choose the ID that best aligns with your next step.
 2. If you are looking at a product catalog, click the "Buy Now" or "Add to Cart" button for a product matching the persona.
-3. If you are on the Checkout page and see Credit Card, Expiration, or CVC inputs, use the "stripe_fill" action (which will autofill these inputs inside the iframe).
-4. After filling the card details using the "stripe_fill" action, you must find and click the "Pay", "Submit", or "Place Order" button using the "click" action to process the transaction. Do NOT run "stripe_fill" again to submit.
-5. If you have submitted the payment and see a Success or Thank You page, output the "finish" action with a final success summary.
-6. RESPOND WITH A RAW JSON OBJECT ONLY. DO NOT WRAP IT IN MARKDOWN CODE BLOCKS OR EXTRA TEXT.`;
+3. Do NOT click "Login" or other account/profile buttons on the shop catalog page. The checkout process does not require logging in.
+4. If you are on the Checkout page and see Credit Card, Expiration, or CVC inputs, use the "stripe_fill" action (which will autofill these inputs inside the iframe).
+5. After filling the card details using the "stripe_fill" action, you must find and click the "Pay", "Submit", or "Place Order" button using the "click" action to process the transaction. Do NOT run "stripe_fill" again to submit.
+6. If you have submitted the payment and see a Success or Thank You page, output the "finish" action with a final success summary.
+7. RESPOND WITH A RAW JSON OBJECT ONLY. DO NOT WRAP IT IN MARKDOWN CODE BLOCKS OR EXTRA TEXT.`;
 
     const userPrompt = `Your persona configuration: ${persona}
 

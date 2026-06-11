@@ -298,22 +298,27 @@ describe('Worker Default Export', () => {
     expect(res.headers.get('Access-Control-Allow-Origin')).toBe('https://fintechnick.com');
   });
 
-  it('should return limits on /limits', async () => {
+  async function testLimitsFetch(env: any, mockLimitsSetup?: () => Promise<any>) {
     const req = new Request('https://localhost/limits');
-    const env = {
-      AI: {},
-      GOOGLE_API_KEY: 'test-api-key',
-    };
+    if (mockLimitsSetup) {
+      await mockLimitsSetup();
+    }
     const res = await workerDefault.fetch(req, env as any);
     expect(res.status).toBe(200);
-    const data = await res.json() as any;
+    return res.json() as any;
+  }
+
+  it('should return limits on /limits', async () => {
+    const data = await testLimitsFetch({
+      AI: {},
+      GOOGLE_API_KEY: 'test-api-key',
+    });
     expect(data.browser.configured).toBe(false);
     expect(data.primary_llm.configured).toBe(true);
     expect(data.secondary_llm.configured).toBe(true);
   });
 
   it('should query browser limits on /limits when MYBROWSER is present', async () => {
-    const req = new Request('https://localhost/limits');
     const mockBrowserWorker = {};
     const env = {
       MYBROWSER: mockBrowserWorker,
@@ -322,9 +327,7 @@ describe('Worker Default Export', () => {
     // Dynamically mock/import to get mock limits
     const puppeteerMock = await import('@cloudflare/puppeteer').then(m => m.default);
     
-    const res = await workerDefault.fetch(req, env as any);
-    expect(res.status).toBe(200);
-    const data = await res.json() as any;
+    const data = await testLimitsFetch(env);
     expect(data.browser.configured).toBe(true);
     expect(data.browser.maxConcurrentSessions).toBe(4);
     expect(data.browser.usedBrowserTimeSeconds).toBe(0);
@@ -333,62 +336,51 @@ describe('Worker Default Export', () => {
   });
 
   it('should fallback to 600 for free tier when browserTimeSecondsLimit is undefined', async () => {
-    const req = new Request('https://localhost/limits');
     const mockBrowserWorker = {};
     const env = {
       MYBROWSER: mockBrowserWorker,
     };
 
-    await setupMockLimits({
+    const data = await testLimitsFetch(env, () => setupMockLimits({
       activeSessions: [],
       maxConcurrentSessions: 4,
       allowedBrowserAcquisitions: 1,
       timeUntilNextAllowedBrowserAcquisition: 0,
       usedBrowserTimeSeconds: 50,
-    });
+    }));
 
-    const res = await workerDefault.fetch(req, env as any);
-    expect(res.status).toBe(200);
-    const data = await res.json() as any;
     expect(data.browser.configured).toBe(true);
     expect(data.browser.usedBrowserTimeSeconds).toBe(50);
     expect(data.browser.browserTimeSecondsLimit).toBe(600);
   });
 
   it('should fallback to unlimited for paid tier when browserTimeSecondsLimit is undefined', async () => {
-    const req = new Request('https://localhost/limits');
     const mockBrowserWorker = {};
     const env = {
       MYBROWSER: mockBrowserWorker,
     };
 
-    await setupMockLimits({
+    const data = await testLimitsFetch(env, () => setupMockLimits({
       activeSessions: [],
       maxConcurrentSessions: 120,
       allowedBrowserAcquisitions: 1,
       timeUntilNextAllowedBrowserAcquisition: 0,
       usedBrowserTimeSeconds: 50,
-    });
+    }));
 
-    const res = await workerDefault.fetch(req, env as any);
-    expect(res.status).toBe(200);
-    const data = await res.json() as any;
     expect(data.browser.configured).toBe(true);
     expect(data.browser.usedBrowserTimeSeconds).toBe(50);
     expect(data.browser.browserTimeSecondsLimit).toBe('unlimited');
   });
 
   it('should use BROWSER_TIME_LIMIT_MOCK when defined in env', async () => {
-    const req = new Request('https://localhost/limits');
     const mockBrowserWorker = {};
     const env = {
       MYBROWSER: mockBrowserWorker,
       BROWSER_TIME_LIMIT_MOCK: 600,
     };
 
-    const res = await workerDefault.fetch(req, env as any);
-    expect(res.status).toBe(200);
-    const data = await res.json() as any;
+    const data = await testLimitsFetch(env);
     expect(data.browser.configured).toBe(true);
     expect(data.browser.browserTimeSecondsLimit).toBe(600);
   });
