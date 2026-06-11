@@ -410,7 +410,12 @@ function setupMockBrowser(pageOverrides: any = {}, browserOverrides: any = {}) {
   it('should handle stripe iframe when fields found', async () => {
     const mockFrame = {
       $: vi.fn().mockImplementation((selector: string) => {
-        if (selector === 'input#cardNumber' || selector === 'input#cardExpiry' || selector === 'input#cardCvc' || selector === 'input#billingName') {
+        if (
+          selector.includes('input#cardNumber') ||
+          selector.includes('input#cardExpiry') ||
+          selector.includes('input#cardCvc') ||
+          selector.includes('input#billingName')
+        ) {
            return Promise.resolve({
              scrollIntoView: vi.fn(),
              evaluate: vi.fn().mockImplementation((fn, value) => {
