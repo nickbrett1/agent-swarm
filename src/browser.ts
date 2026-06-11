@@ -484,8 +484,14 @@ export class PuppeteerBrowserHelper {
 
     console.log("Checking for Stripe Checkout inputs inside frames...");
     try {
-      // Get all frames
-      const frames = this.page.frames();
+      // Get all frames and filter out detached ones
+      let frames = this.page.frames();
+      frames = frames.filter((f: any) => {
+        if (typeof f.isDetached === 'function') return !f.isDetached();
+        if ('detached' in f) return !f.detached;
+        if ('_detached' in f) return !f._detached;
+        return true;
+      });
       let cardFilled = false;
       let expiryFilled = false;
       let cvcFilled = false;
