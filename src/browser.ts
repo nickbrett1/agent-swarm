@@ -53,8 +53,7 @@ export class PuppeteerBrowserHelper {
       if (!sessions || sessions.length === 0) {
         return 0;
       }
-      let clearedCount = 0;
-      for (const s of sessions) {
+      const deletePromises = sessions.map(async (s) => {
         const sessionId = s.sessionId || (s as { id?: string }).id;
         if (sessionId) {
           console.log(`Closing stale session: ${sessionId}`);
@@ -63,12 +62,14 @@ export class PuppeteerBrowserHelper {
           });
           const delText = await delRes.text();
           console.log(`Delete response for ${sessionId}: status=${delRes.status}, body=${delText}`);
-          clearedCount++;
+          return 1;
         } else {
           console.warn("Stale session has no sessionId or id:", JSON.stringify(s));
+          return 0;
         }
-      }
-      return clearedCount;
+      });
+      const results = await Promise.all(deletePromises);
+      return results.reduce((acc: number, curr: number) => acc + curr, 0);
     } catch (clearErr) {
       console.error("Failed to clear stale sessions:", clearErr);
     }
@@ -141,20 +142,7 @@ export class PuppeteerBrowserHelper {
     await this.page.setViewport({ width: 1280, height: 720 });
     this.page.setDefaultTimeout(15000);
 
-    // Block unnecessary requests (images, media, fonts) to save bandwidth and execution time
-    try {
-      await this.page.setRequestInterception(true);
-      this.page.on("request", (req) => {
-        const resourceType = req.resourceType();
-        if (["image", "media", "font"].includes(resourceType)) {
-          req.abort();
-        } else {
-          req.continue();
-        }
-      });
-    } catch (interceptErr) {
-      console.warn("Failed to enable request interception:", interceptErr);
-    }
+    // Request interception is disabled to ensure Stripe Checkout and dynamic frames load and behave correctly without hanging.
   }
 
   async close(): Promise<void> {
@@ -277,7 +265,7 @@ export class PuppeteerBrowserHelper {
 
           const results: ElementData[] = [];
           const selector = 'button, a, input, select, textarea, [role="button"], [onclick]';
-          const nodes = Array.from(document.querySelectorAll(selector));
+          const nodes = document.querySelectorAll(selector);
 
           nodes.forEach((node) => {
             const el = node as HTMLElement;
@@ -302,16 +290,31 @@ export class PuppeteerBrowserHelper {
           // Ignore timeout or other errors during navigation wait, as they are expected
         }
 
+        // Force Puppeteer to refresh and sync its internal frame tree
+        try {
+          if (this.page) {
+            await this.page.frames();
+          }
+        } catch (e) {
+          // Ignore
+        }
+
         try {
           const url = await this.getPageUrl();
-          if (url && (url.toLowerCase().includes("success") || 
-              url.toLowerCase().includes("thank") || 
-              url.toLowerCase().includes("complete"))) {
-            console.log("Success/thank-you page detected during error. Returning dummy response.");
-            return { 
-              elements: [], 
-              textSummary: `Redirected to success page: ${url}` 
-            };
+          if (url) {
+            const lowerUrl = url.toLowerCase();
+            if (lowerUrl.includes("success") ||
+                lowerUrl.includes("thank") ||
+                lowerUrl.includes("complete") ||
+                lowerUrl.includes("confirm") ||
+                lowerUrl.includes("receipt") ||
+                lowerUrl.includes("order")) {
+              console.log("Success/thank-you/order page detected during error. Returning dummy response.");
+              return {
+                elements: [], 
+                textSummary: `Redirected to success page: ${url}`
+              };
+            }
           }
         } catch (urlErr) {
           const urlErrMsg = urlErr instanceof Error ? urlErr.message : String(urlErr);
@@ -319,6 +322,16 @@ export class PuppeteerBrowserHelper {
         }
         
         if (attempts >= maxAttempts) {
+          const isDetachedFrameError = message.toLowerCase().includes("detached") || 
+                                       message.toLowerCase().includes("destroyed") || 
+                                       message.toLowerCase().includes("context");
+          if (isDetachedFrameError) {
+            console.error(`Persistent detached frame error after ${maxAttempts} attempts. Returning empty elements to allow settle/cooldown.`);
+            return {
+              elements: [],
+              textSummary: `Warning: Browser is in a transient detached frame state. Waiting for recovery...`
+            };
+          }
           throw err;
         }
         console.log("Waiting 2 seconds for navigation/redirect to settle before retrying...");
@@ -382,15 +395,17 @@ export class PuppeteerBrowserHelper {
         };
       }
       // Dispose of extra handles we won't use to avoid reference leaks
-      for (let i = 1; i < elements.length; i++) {
-        try {
-          if (elements[i] && typeof elements[i].dispose === 'function') {
-            await elements[i].dispose();
+      await Promise.all(
+        elements.slice(1).map(async (el) => {
+          try {
+            if (el && typeof el.dispose === 'function') {
+              await el.dispose();
+            }
+          } catch (e) {
+            // ignore
           }
-        } catch (e) {
-          // ignore
-        }
-      }
+        })
+      );
       return {
         element: elements[0],
         xpath
@@ -412,20 +427,26 @@ export class PuppeteerBrowserHelper {
     const { element, xpath } = result;
 
     console.log(`Clicking element: ${id} (XPath: ${xpath})`);
-    try {
-      if (element) {
-        try {
-          await element.scrollIntoView();
-          await element.click();
-          return true;
-        } finally {
-          if (element && typeof element.dispose === 'function') {
-            await element.dispose();
-          }
+
+    // Attempt native Puppeteer click first
+    if (element) {
+      try {
+        await element.scrollIntoView();
+        await element.click();
+        return true;
+      } catch (nativeErr) {
+        console.warn(`Native click failed for ${id}, attempting fallback...`, nativeErr instanceof Error ? nativeErr.message : String(nativeErr));
+        // Proceed to fallback
+      } finally {
+        if (typeof element.dispose === 'function') {
+          await element.dispose();
         }
       }
-      // Fallback: evaluate click directly via JS
-      const clicked = await this.page.evaluate((xp) => {
+    }
+
+    // Fallback: evaluate click directly via JS if element is null or native click failed
+    try {
+      const clicked = await this.page.evaluate((xp: any) => {
         const res = document.evaluate(xp, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
         const node = res.singleNodeValue as HTMLElement;
         if (node) {
@@ -437,7 +458,7 @@ export class PuppeteerBrowserHelper {
       }, xpath);
       return clicked;
     } catch (err) {
-      console.error(`Error clicking element ${id}:`, err);
+      console.error(`Error in click fallback for element ${id}:`, err);
       return false;
     }
   }
@@ -484,35 +505,43 @@ export class PuppeteerBrowserHelper {
 
     console.log("Checking for Stripe Checkout inputs inside frames...");
     try {
-      // Get all frames
-      const frames = this.page.frames();
+      // Get all frames and filter out detached ones
+      let frames = this.page.frames();
+      frames = frames.filter((f: any) => {
+        if (typeof f.isDetached === 'function') return !f.isDetached();
+        if ('detached' in f) return !f.detached;
+        if ('_detached' in f) return !f._detached;
+        return true;
+      });
       let cardFilled = false;
       let expiryFilled = false;
       let cvcFilled = false;
 
       // Helper to fill a field in a frame
       async function fillInFrame(frame: Frame, selectors: string[], value: string): Promise<boolean> {
-        for (const selector of selectors) {
-          try {
-            const handle = await frame.$(selector);
-            if (handle) {
-              try {
-                await handle.scrollIntoView();
-                await handle.evaluate((el, val) => {
-                  (el as HTMLInputElement).value = val;
-                  el.dispatchEvent(new Event('input', { bubbles: true }));
-                  el.dispatchEvent(new Event('change', { bubbles: true }));
-                }, value);
-                return true;
-              } finally {
-                if (handle && typeof handle.dispose === 'function') {
-                  await handle.dispose();
-                }
+        if (typeof frame.isDetached === 'function' && frame.isDetached()) {
+          return false;
+        }
+        try {
+          const combinedSelector = selectors.join(',');
+          const handle = await frame.$(combinedSelector);
+          if (handle) {
+            try {
+              await handle.scrollIntoView();
+              await handle.evaluate((el, val) => {
+                (el as HTMLInputElement).value = val;
+                el.dispatchEvent(new Event('input', { bubbles: true }));
+                el.dispatchEvent(new Event('change', { bubbles: true }));
+              }, value);
+              return true;
+            } finally {
+              if (handle && typeof handle.dispose === 'function') {
+                await handle.dispose();
               }
             }
-          } catch {
-            // Ignore if selector is not found in this frame
           }
+        } catch {
+          // Ignore if selector is not found in this frame
         }
         return false;
       }
