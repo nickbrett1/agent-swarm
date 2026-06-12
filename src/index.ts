@@ -2,6 +2,7 @@ import { Agent, routeAgentRequest, callable } from "agents";
 import { PuppeteerBrowserHelper } from "./browser.js";
 import puppeteer, { BrowserWorker } from "@cloudflare/puppeteer";
 import type { Ai } from "@cloudflare/workers-types";
+import ipaddr from "ipaddr.js";
 
 export interface Env {
   MYBROWSER: BrowserWorker;
@@ -40,9 +41,38 @@ export class ShopperAgent extends Agent<Env, ShopperState> {
   };
 
   /**
-   * Validates a URL to prevent SSRF by blocking local/private IP addresses and domains.
+   * Helper to determine if an IP address is private/local.
    */
-  private isSafeUrl(urlStr: string): boolean {
+  private isPrivateIp(ipStr: string): boolean {
+    try {
+      let ip = ipaddr.parse(ipStr);
+
+      // If it's an IPv4-mapped IPv6 address (e.g., ::ffff:192.168.1.1),
+      // extract the underlying IPv4 address to check its true range.
+      if (ip.kind() === 'ipv6' && (ip as ipaddr.IPv6).isIPv4MappedAddress()) {
+        ip = (ip as ipaddr.IPv6).toIPv4Address();
+      }
+
+      const range = ip.range();
+
+      return (
+        range === 'private' ||
+        range === 'loopback' ||
+        range === 'linkLocal' ||
+        range === 'unspecified' ||
+        range === 'uniqueLocal'
+      );
+    } catch {
+      // If parsing fails, default to treating it as safe or handled elsewhere
+      return false;
+    }
+  }
+
+  /**
+   * Validates a URL to prevent SSRF by blocking local/private IP addresses and domains.
+   * Also resolves the domain name to check if it points to a private IP.
+   */
+  private async isSafeUrl(urlStr: string): Promise<boolean> {
     try {
       const urlObj = new URL(urlStr);
 
@@ -51,46 +81,60 @@ export class ShopperAgent extends Agent<Env, ShopperState> {
         return false;
       }
 
-      const hostname = urlObj.hostname;
+      let hostname = urlObj.hostname;
+
+      // Strip brackets for IPv6
+      if (hostname.startsWith('[') && hostname.endsWith(']')) {
+        hostname = hostname.substring(1, hostname.length - 1);
+      }
 
       // Block localhost and local/internal domains
       if (hostname === 'localhost' || hostname.endsWith('.local') || hostname.endsWith('.internal')) {
         return false;
       }
 
-      // Check IPv4 addresses (new URL() normalizes octal/hex/decimal IPs to standard dot-decimal notation)
-      const ipv4Regex = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/;
-      const match = hostname.match(ipv4Regex);
-      if (match) {
-        const octet1 = parseInt(match[1], 10);
-        const octet2 = parseInt(match[2], 10);
-
-        // 127.x.x.x (Loopback)
-        if (octet1 === 127) return false;
-        // 10.x.x.x (Private)
-        if (octet1 === 10) return false;
-        // 172.16.x.x - 172.31.x.x (Private)
-        if (octet1 === 172 && octet2 >= 16 && octet2 <= 31) return false;
-        // 192.168.x.x (Private)
-        if (octet1 === 192 && octet2 === 168) return false;
-        // 169.254.x.x (Link-local / AWS metadata)
-        if (octet1 === 169 && octet2 === 254) return false;
-        // 0.x.x.x (Current network)
-        if (octet1 === 0) return false;
+      // If it's already an IP address, just check it directly
+      if (ipaddr.isValid(hostname)) {
+        return !this.isPrivateIp(hostname);
       }
 
-      // Block common IPv6 local/private addresses
-      if (hostname.startsWith('[') && hostname.endsWith(']')) {
-        const ipv6 = hostname.substring(1, hostname.length - 1).toLowerCase();
-        if (ipv6 === '::1' || ipv6 === '0:0:0:0:0:0:0:1') return false;
-        // Unique Local Addresses (fc00::/7)
-        if (ipv6.startsWith('fc') || ipv6.startsWith('fd')) return false;
-        // Link-local (fe80::/10)
-        if (ipv6.startsWith('fe8') || ipv6.startsWith('fe9') || ipv6.startsWith('fea') || ipv6.startsWith('feb')) return false;
+      // Otherwise, resolve the domain name to A/AAAA records
+      const resolveDns = async (type: string) => {
+        try {
+          const response = await fetch(`https://cloudflare-dns.com/dns-query?name=${hostname}&type=${type}`, {
+            headers: { 'accept': 'application/dns-json' }
+          });
+          if (!response.ok) return [];
+          const data = await response.json() as { Answer?: Array<{ type: number, data: string }> };
+          return data.Answer || [];
+        } catch {
+          return [];
+        }
+      };
+
+      const [aRecords, aaaaRecords] = await Promise.all([
+        resolveDns('A'),
+        resolveDns('AAAA')
+      ]);
+
+      const allRecords = [...aRecords, ...aaaaRecords];
+
+      // If we couldn't resolve any IP, we might consider it safe or unsafe depending on policy.
+      // Let's assume safe to proceed and let the actual connection fail if it's invalid.
+      // But we must check the resolved ones.
+      for (const record of allRecords) {
+        // A record type is 1, AAAA record type is 28. CNAMEs might also be returned.
+        // We just check the data field for any returned IP.
+        if (ipaddr.isValid(record.data)) {
+          if (this.isPrivateIp(record.data)) {
+            console.warn(`DNS resolution for ${hostname} returned a private IP: ${record.data}`);
+            return false;
+          }
+        }
       }
 
       return true;
-    } catch {
+    } catch (e) {
       // If URL parsing fails, it's malformed and potentially unsafe
       return false;
     }
@@ -111,7 +155,8 @@ export class ShopperAgent extends Agent<Env, ShopperState> {
 
     const targetUrl = url || this.env.SHOP_URL || "https://fintechnick.com/shop";
 
-    if (!this.isSafeUrl(targetUrl)) {
+    const isSafe = await this.isSafeUrl(targetUrl);
+    if (!isSafe) {
       const errorMsg = `Invalid or unsafe URL provided: ${targetUrl}`;
       this.setState({
         ...this.state,
