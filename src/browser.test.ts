@@ -67,6 +67,18 @@ function setupMockBrowser(pageOverrides: any = {}, browserOverrides: any = {}) {
     helper = new PuppeteerBrowserHelper(mockBrowserBinding);
   });
 
+  it.each([
+    { method: 'goto', args: ['https://example.com'] },
+    { method: 'getInteractiveElements', args: [] },
+    { method: 'clickElement', args: ['some_id'] },
+    { method: 'typeElement', args: ['some_id', 'test'] },
+    { method: 'handleStripeIframe', args: ['4242', '12/28', '123', 'Test'] },
+    { method: 'findElement', args: ['some_id'] } // private, handled below using casting
+  ])('should throw error on $method if not initialized', async ({ method, args }) => {
+    const fn = (helper as any)[method].bind(helper);
+    await expect(fn(...args)).rejects.toThrow('Browser not initialized');
+  });
+
   it('should initialize browser and page successfully', async () => {
     const { mockBrowser, mockPage } = setupMockBrowser();
 
@@ -165,9 +177,6 @@ function setupMockBrowser(pageOverrides: any = {}, browserOverrides: any = {}) {
     warnSpy.mockRestore();
   });
 
-  it('should throw error on goto if not initialized', async () => {
-    await expect(helper.goto('https://example.com')).rejects.toThrow('Browser not initialized');
-  });
 
   it('should navigate to url', async () => {
     const mockGoto = vi.fn();
@@ -236,9 +245,6 @@ function setupMockBrowser(pageOverrides: any = {}, browserOverrides: any = {}) {
     expect(result.textSummary).toContain('button_0');
   });
 
-  it('should throw error on getInteractiveElements if not initialized', async () => {
-    await expect(helper.getInteractiveElements()).rejects.toThrow('Browser not initialized');
-  });
 
   async function testInteractiveElementsFailure(
     evaluateMock: any,
@@ -316,9 +322,6 @@ function setupMockBrowser(pageOverrides: any = {}, browserOverrides: any = {}) {
     expect(result.textSummary).toContain('Redirected to success page');
   });
 
-  it('should throw error on clickElement if not initialized', async () => {
-    await expect(helper.clickElement('some_id')).rejects.toThrow('Browser not initialized');
-  });
 
   it('should return false if element ID not found for click or type', async () => {
     setupMockBrowser();
@@ -332,9 +335,6 @@ function setupMockBrowser(pageOverrides: any = {}, browserOverrides: any = {}) {
   });
 
   describe('findElement', () => {
-    it('should throw error if browser is not initialized', async () => {
-      await expect((helper as any).findElement('some_id')).rejects.toThrow('Browser not initialized');
-    });
 
     it('should return null and warn if ID is not found in elementsMap', async () => {
       setupMockBrowser();
@@ -437,9 +437,6 @@ function setupMockBrowser(pageOverrides: any = {}, browserOverrides: any = {}) {
     consoleSpy.mockRestore();
   });
 
-  it('should throw error on typeElement if not initialized', async () => {
-    await expect(helper.typeElement('some_id', 'test')).rejects.toThrow('Browser not initialized');
-  });
 
   it('should handle detached frame error in both click and type elements', async () => {
     const mockEvaluate = vi.fn().mockResolvedValue([
@@ -510,9 +507,6 @@ function setupMockBrowser(pageOverrides: any = {}, browserOverrides: any = {}) {
     expect(result).toBe(false);
   });
 
-  it('should throw error on handleStripeIframe if not initialized', async () => {
-    await expect(helper.handleStripeIframe('4242', '12/28', '123', 'Test')).rejects.toThrow('Browser not initialized');
-  });
 
 
   function setupFallbackMock(nodeValue: any) {
