@@ -131,9 +131,10 @@ export class StagehandBrowserHelper {
 
     // Patch global env.MYBROWSER to intercept and handle WebSocket upgrade failures gracefully
     try {
-      console.log("workersEnv status:", !!workersEnv, "MYBROWSER:", workersEnv ? !!workersEnv.MYBROWSER : "no env", "keys:", workersEnv ? Object.keys(workersEnv) : []);
-      if (workersEnv && workersEnv.MYBROWSER) {
-        const browser = workersEnv.MYBROWSER;
+      const wEnv = workersEnv as any;
+      console.log("workersEnv status:", !!wEnv, "MYBROWSER:", wEnv ? !!wEnv.MYBROWSER : "no env", "keys:", wEnv ? Object.keys(wEnv) : []);
+      if (wEnv && wEnv.MYBROWSER) {
+        const browser = wEnv.MYBROWSER;
         const originalFetch = browser.fetch;
         if (originalFetch && !originalFetch.__isPatched) {
           console.log("Attempting to patch browser.fetch directly...");
@@ -619,7 +620,7 @@ export class StagehandBrowserHelper {
       } catch (fallbackErr) {
         console.error(`Playwright fallback click failed for ${id}:`, fallbackErr);
         try {
-          const clicked = await page.evaluate((xp) => {
+          const clicked = await page.evaluate((xp: string) => {
             const res = document.evaluate(xp, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
             const node = res.singleNodeValue as HTMLElement;
             if (node) {
