@@ -7,6 +7,7 @@ const endpointURLString = playwrightModule.endpointURLString;
 
 // Intercept playwright's chromium.connectOverCDP to ensure that when it connects to a remote browser,
 // it always creates a browser context if none exists.
+let lastCDPError: Error | null = null;
 let chromium: any = undefined;
 try {
   chromium = (playwrightModule as any).chromium || (playwrightModule as any).default?.chromium;
@@ -18,14 +19,19 @@ if (chromium && chromium.connectOverCDP) {
   const originalConnectOverCDP = chromium.connectOverCDP;
   const patchedConnectOverCDP = async (endpointURLOrOptions: any, options?: any) => {
     console.log("Patched connectOverCDP invoked");
-    const browser = await originalConnectOverCDP.call(chromium, endpointURLOrOptions, options);
-    // Remote/custom CDP connections in Cloudflare Workers do not initialize a default context.
-    // We must ensure there is at least one context so that Stagehand doesn't encounter an undefined context.
-    if (browser.contexts().length === 0) {
-      console.log("No browser contexts found. Creating a new browser context...");
-      await browser.newContext();
+    try {
+      const browser = await originalConnectOverCDP.call(chromium, endpointURLOrOptions, options);
+      // Remote/custom CDP connections in Cloudflare Workers do not initialize a default context.
+      // We must ensure there is at least one context so that Stagehand doesn't encounter an undefined context.
+      if (browser.contexts().length === 0) {
+        console.log("No browser contexts found. Creating a new browser context...");
+        await browser.newContext();
+      }
+      return browser;
+    } catch (err) {
+      lastCDPError = err instanceof Error ? err : new Error(String(err));
+      throw err;
     }
-    return browser;
   };
 
   chromium.connectOverCDP = patchedConnectOverCDP;
@@ -171,20 +177,22 @@ export class StagehandBrowserHelper {
     });
 
     try {
+      lastCDPError = null;
       await this.stagehand.init();
     } catch (err) {
-      const errMsg = err instanceof Error ? err.message : String(err);
+      const activeErr = lastCDPError || err;
+      const errMsg = activeErr instanceof Error ? activeErr.message : String(activeErr);
       if (errMsg.includes("429") || errMsg.toLowerCase().includes("rate limit") || errMsg.includes("Unable to create new browser")) {
         let limitsInfo;
         try {
           limitsInfo = await puppeteer.limits(this.browserBinding);
         } catch (limitErr) {
           console.warn("Failed to fetch limits after rate limit error:", limitErr);
-          throw err;
+          throw activeErr;
         }
         throw new Error(`${errMsg} - Cloudflare Limits: Active Sessions=${limitsInfo.activeSessions ? limitsInfo.activeSessions.length : 0}/${limitsInfo.maxConcurrentSessions}, Acquisitions Allowed=${limitsInfo.allowedBrowserAcquisitions}, Time Until Next Acquisition=${limitsInfo.timeUntilNextAllowedBrowserAcquisition}ms`);
       }
-      throw err;
+      throw activeErr;
     }
   }
 
