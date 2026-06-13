@@ -172,6 +172,8 @@ export class ShopperAgent extends Agent<Env, ShopperState> {
       this.env.GOOGLE_API_KEY || this.env.GEMINI_API_KEY
     );
     
+    const browserStartTime = Date.now();
+    let resultString = "";
     try {
       await helper.init();
       await helper.goto(targetUrl);
@@ -339,7 +341,7 @@ export class ShopperAgent extends Agent<Env, ShopperState> {
         throw new Error(outcomeSummary);
       }
 
-      return `Shopping Session Finished. Status: ${this.state.status}. Summary: ${outcomeSummary}`;
+      resultString = `Shopping Session Finished. Status: ${this.state.status}. Summary: ${outcomeSummary}`;
 
     } catch (err: unknown) {
       console.error("Error during shopping execution:", err);
@@ -368,18 +370,24 @@ export class ShopperAgent extends Agent<Env, ShopperState> {
           ...this.state,
           status: "completed"
         });
-        return `Shopping Session Finished. Status: completed. Summary: ${outcomeSummary}`;
+        resultString = `Shopping Session Finished. Status: completed. Summary: ${outcomeSummary}`;
+      } else {
+        this.setState({
+          ...this.state,
+          status: "failed",
+          lastError: errMsg
+        });
+        throw err;
       }
-
-      this.setState({
-        ...this.state,
-        status: "failed",
-        lastError: errMsg
-      });
-      throw err;
     } finally {
       await helper.close();
+      const browserDurationSeconds = ((Date.now() - browserStartTime) / 1000).toFixed(1);
+      if (resultString) {
+        resultString += ` [Browser Time Used: ${browserDurationSeconds}s]`;
+      }
     }
+
+    return resultString;
   }
 
   /**
