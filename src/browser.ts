@@ -1,26 +1,32 @@
 import { Stagehand } from "@browserbasehq/stagehand";
-import playwright, { chromium, endpointURLString } from "@cloudflare/playwright";
+import * as playwrightModule from "@cloudflare/playwright";
 import puppeteer from "@cloudflare/puppeteer";
 import { AgentLLMClient } from "./agentLLMClient.js";
 
+const endpointURLString = playwrightModule.endpointURLString;
+
 // Intercept playwright's chromium.connectOverCDP to ensure that when it connects to a remote browser,
 // it always creates a browser context if none exists.
-const originalConnectOverCDP = chromium.connectOverCDP;
-const patchedConnectOverCDP = async (endpointURLOrOptions: any, options?: any) => {
-  console.log("Patched connectOverCDP invoked");
-  const browser = await originalConnectOverCDP.call(chromium, endpointURLOrOptions, options);
-  // Remote/custom CDP connections in Cloudflare Workers do not initialize a default context.
-  // We must ensure there is at least one context so that Stagehand doesn't encounter an undefined context.
-  if (browser.contexts().length === 0) {
-    console.log("No browser contexts found. Creating a new browser context...");
-    await browser.newContext();
-  }
-  return browser;
-};
+const chromium = (playwrightModule as any)?.chromium || (playwrightModule as any)?.default?.chromium;
+const originalConnectOverCDP = chromium?.connectOverCDP;
+if (originalConnectOverCDP) {
+  const patchedConnectOverCDP = async (endpointURLOrOptions: any, options?: any) => {
+    console.log("Patched connectOverCDP invoked");
+    const browser = await originalConnectOverCDP.call(chromium, endpointURLOrOptions, options);
+    // Remote/custom CDP connections in Cloudflare Workers do not initialize a default context.
+    // We must ensure there is at least one context so that Stagehand doesn't encounter an undefined context.
+    if (browser.contexts().length === 0) {
+      console.log("No browser contexts found. Creating a new browser context...");
+      await browser.newContext();
+    }
+    return browser;
+  };
 
-chromium.connectOverCDP = patchedConnectOverCDP;
-if (playwright && playwright.chromium) {
-  playwright.chromium.connectOverCDP = patchedConnectOverCDP;
+  chromium.connectOverCDP = patchedConnectOverCDP;
+  const playwrightDefault = (playwrightModule as any)?.default;
+  if (playwrightDefault && playwrightDefault.chromium) {
+    playwrightDefault.chromium.connectOverCDP = patchedConnectOverCDP;
+  }
 }
 
 export interface InteractiveElement {
