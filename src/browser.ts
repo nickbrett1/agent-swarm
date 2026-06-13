@@ -1,7 +1,27 @@
 import { Stagehand } from "@browserbasehq/stagehand";
-import { endpointURLString } from "@cloudflare/playwright";
+import playwright, { chromium, endpointURLString } from "@cloudflare/playwright";
 import puppeteer from "@cloudflare/puppeteer";
 import { AgentLLMClient } from "./agentLLMClient.js";
+
+// Intercept playwright's chromium.connectOverCDP to ensure that when it connects to a remote browser,
+// it always creates a browser context if none exists.
+const originalConnectOverCDP = chromium.connectOverCDP;
+const patchedConnectOverCDP = async (endpointURLOrOptions: any, options?: any) => {
+  console.log("Patched connectOverCDP invoked");
+  const browser = await originalConnectOverCDP.call(chromium, endpointURLOrOptions, options);
+  // Remote/custom CDP connections in Cloudflare Workers do not initialize a default context.
+  // We must ensure there is at least one context so that Stagehand doesn't encounter an undefined context.
+  if (browser.contexts().length === 0) {
+    console.log("No browser contexts found. Creating a new browser context...");
+    await browser.newContext();
+  }
+  return browser;
+};
+
+chromium.connectOverCDP = patchedConnectOverCDP;
+if (playwright && playwright.chromium) {
+  playwright.chromium.connectOverCDP = patchedConnectOverCDP;
+}
 
 export interface InteractiveElement {
   id: string;
@@ -103,7 +123,12 @@ export class StagehandBrowserHelper {
         const sessionId = sessions[0].sessionId || (sessions[0] as { id?: string }).id;
         if (sessionId) {
           console.log(`Attempting to connect to existing session: ${sessionId}`);
-          cdpUrl = endpointURLString(this.browserBinding, { sessionId });
+          const rawUrl = endpointURLString(this.browserBinding, { sessionId });
+          // Manually append browser_session to query parameters so that @cloudflare/playwright's
+          // connectOverCDP override correctly routes to connect() instead of launch().
+          const parsedUrl = new URL(rawUrl);
+          parsedUrl.searchParams.set("browser_session", sessionId);
+          cdpUrl = parsedUrl.toString();
         }
       }
     } catch (err) {
