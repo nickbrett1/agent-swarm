@@ -13,14 +13,15 @@
     "test:integration": "node scripts/test-agent.js"
   },
   "dependencies": {
-    "@browserbasehq/stagehand": "2.5.x",
+    "@browserbasehq/stagehand": "2.5.9",
     "@cloudflare/playwright": "^1.3.0",
     "@cloudflare/puppeteer": "latest",
     "agents": "latest",
-    "dotenv": "^17.4.2",
+    "dotenv": "^16.4.5",
     "ipaddr.js": "^2.4.0",
     "jsdom": "^29.1.1",
     "vitest": "^4.1.8",
+    "zod": "3.25.76",
     "zod-to-json-schema": "^3.25.2"
   },
   "devDependencies": {
@@ -28,5 +29,8 @@
     "@vitest/coverage-v8": "^4.1.8",
     "typescript": "^5.4.5",
     "wrangler": "4.95.0"
+  },
+  "overrides": {
+    "zod": "3.25.76"
   }
 }
