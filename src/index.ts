@@ -637,6 +637,15 @@ export default {
                 (limits as any).browserTimeSecondsLimit : 
                 ((limits.maxConcurrentSessions || 1) >= 10 ? "unlimited" : 600))
           };
+
+          if (
+            browserLimits.browserTimeSecondsLimit !== "unlimited" &&
+            browserLimits.usedBrowserTimeSeconds >= browserLimits.browserTimeSecondsLimit
+          ) {
+            browserLimits.timeUntilBrowserTimeReset = (limits as any).timeUntilBrowserTimeReset !== undefined
+              ? (limits as any).timeUntilBrowserTimeReset
+              : 0;
+          }
         } catch (err) {
           browserLimits = {
             configured: true,
