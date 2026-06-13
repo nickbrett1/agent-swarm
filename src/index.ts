@@ -644,7 +644,9 @@ export default {
             browserLimits.usedBrowserTimeSeconds >= browserLimits.browserTimeSecondsLimit &&
             browserLimits.timeUntilBrowserTimeReset === undefined
           ) {
-            browserLimits.timeUntilBrowserTimeReset = 0;
+            const now = new Date();
+            const nextUTC = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1, 0, 0, 0, 0));
+            browserLimits.timeUntilBrowserTimeReset = Math.max(0, Math.floor((nextUTC.getTime() - now.getTime()) / 1000));
           }
         } catch (err) {
           browserLimits = {

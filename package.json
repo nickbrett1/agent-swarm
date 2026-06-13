@@ -10,7 +10,8 @@
     "deploy": "wrangler deploy",
     "config": "./scripts/setup-wrangler-config.sh",
     "test": "vitest run --coverage",
-    "test:integration": "node scripts/test-agent.js"
+    "test:integration": "node scripts/test-agent.js",
+    "limits": "node scripts/get-limits.cjs"
   },
   "dependencies": {
     "@browserbasehq/stagehand": "2.5.x",
