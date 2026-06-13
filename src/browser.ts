@@ -415,6 +415,22 @@ export class StagehandBrowserHelper {
     return { elements, textSummary };
   }
 
+  private getElementDescription(el: InteractiveElement): string {
+    let description = `the ${el.tag}`;
+    if (el.text) {
+      description += ` with text "${el.text}"`;
+    } else if (el.placeholder) {
+      description += ` with placeholder/label "${el.placeholder}"`;
+    } else if (el.name) {
+      description += ` with name "${el.name}"`;
+    } else if (el.role) {
+      description += ` with role "${el.role}"`;
+    } else {
+      description += ` located at xpath "${el.xpath}"`;
+    }
+    return description;
+  }
+
   /**
    * Clicks an element by its interactive ID.
    */
@@ -428,19 +444,7 @@ export class StagehandBrowserHelper {
 
     console.log(`Clicking element: ${id} (XPath: ${el.xpath})`);
     try {
-      let instruction = `Click the ${el.tag}`;
-      if (el.text) {
-        instruction += ` with text "${el.text}"`;
-      } else if (el.placeholder) {
-        instruction += ` with placeholder/label "${el.placeholder}"`;
-      } else if (el.name) {
-        instruction += ` with name "${el.name}"`;
-      } else if (el.role) {
-        instruction += ` with role "${el.role}"`;
-      } else {
-        instruction += ` located at xpath "${el.xpath}"`;
-      }
-      
+      const instruction = `Click ${this.getElementDescription(el)}`;
       await this.stagehand.page.act(instruction);
       return true;
     } catch (err) {
@@ -483,19 +487,7 @@ export class StagehandBrowserHelper {
 
     console.log(`Typing "${text}" into element: ${id}`);
     try {
-      let instruction = `Type "${text}" into the ${el.tag}`;
-      if (el.text) {
-        instruction += ` with text "${el.text}"`;
-      } else if (el.placeholder) {
-        instruction += ` with placeholder/label "${el.placeholder}"`;
-      } else if (el.name) {
-        instruction += ` with name "${el.name}"`;
-      } else if (el.role) {
-        instruction += ` with role "${el.role}"`;
-      } else {
-        instruction += ` located at xpath "${el.xpath}"`;
-      }
-
+      const instruction = `Type "${text}" into ${this.getElementDescription(el)}`;
       await this.stagehand.page.act(instruction);
       return true;
     } catch (err) {
