@@ -1,4 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+vi.mock("cloudflare:workers", () => ({
+  env: {
+    MYBROWSER: {
+      fetch: vi.fn(),
+    },
+  },
+}));
+
 import workerDefault, { ShopperAgent, verifyHmacSignature } from './index.js';
 
 vi.mock('@cloudflare/puppeteer', () => ({

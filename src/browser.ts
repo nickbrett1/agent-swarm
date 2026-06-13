@@ -1,6 +1,7 @@
 import { Stagehand } from "@browserbasehq/stagehand";
 import * as playwrightModule from "@cloudflare/playwright";
 import puppeteer from "@cloudflare/puppeteer";
+import { env as workersEnv } from "cloudflare:workers";
 import { AgentLLMClient } from "./agentLLMClient.js";
 
 const endpointURLString = playwrightModule.endpointURLString;
@@ -128,6 +129,78 @@ export class StagehandBrowserHelper {
   async init(): Promise<void> {
     console.log("Initializing Stagehand browser helper...");
 
+    // Patch global env.MYBROWSER to intercept and handle WebSocket upgrade failures gracefully
+    try {
+      console.log("workersEnv status:", !!workersEnv, "MYBROWSER:", workersEnv ? !!workersEnv.MYBROWSER : "no env", "keys:", workersEnv ? Object.keys(workersEnv) : []);
+      if (workersEnv && workersEnv.MYBROWSER) {
+        const browser = workersEnv.MYBROWSER;
+        const originalFetch = browser.fetch;
+        if (originalFetch && !originalFetch.__isPatched) {
+          console.log("Attempting to patch browser.fetch directly...");
+          const patchedFetch = async function(request: any, init?: any) {
+            let urlStr = "";
+            if (typeof request === "string") {
+              urlStr = request;
+            } else if (request && typeof request === "object") {
+              if (typeof request.toString === "function") {
+                urlStr = request.toString();
+              } else {
+                urlStr = request.url || "";
+              }
+            }
+            let method = "GET";
+            if (init && init.method) {
+              method = init.method;
+            } else if (request && typeof request === "object" && "method" in request) {
+              method = request.method || "GET";
+            }
+
+            // Strip query parameters for v1/devtools/browser/ upgrade requests as the API returns a 400 validation error
+            if (urlStr.includes("/v1/devtools/browser/") && method.toUpperCase() !== "DELETE") {
+              try {
+                const urlObj = new URL(urlStr);
+                if (urlObj.search !== "") {
+                  console.log(`[MYBROWSER.fetch] Stripping query parameters from upgrade request: ${urlObj.search}`);
+                  urlObj.search = "";
+                  if (typeof request === "string") {
+                    request = urlObj.toString();
+                  } else if (request instanceof URL) {
+                    request = urlObj;
+                  } else {
+                    request = urlObj;
+                  }
+                  urlStr = urlObj.toString();
+                }
+              } catch (e) {
+                console.error("[MYBROWSER.fetch] Failed to strip query parameters:", e);
+              }
+            }
+
+            console.log(`[MYBROWSER.fetch] request: ${urlStr} [${method}]`);
+            try {
+              const response = await originalFetch.call(browser, request, init);
+              if (urlStr.includes("/v1/devtools/browser/") && method.toUpperCase() !== "DELETE" && !response.webSocket) {
+                const status = response.status;
+                const text = await response.text().catch(() => "");
+                console.error(`[MYBROWSER.fetch] WebSocket upgrade failed. Status: ${status}, Body: ${text}`);
+                throw new Error(`WebSocket upgrade failed: status ${status}, message: ${text}`);
+              }
+              return response;
+            } catch (err) {
+              console.error("[MYBROWSER.fetch] Error during fetch:", err);
+              throw err;
+            }
+          };
+          // @ts-ignore
+          patchedFetch.__isPatched = true;
+          browser.fetch = patchedFetch;
+          console.log("browser.fetch patched directly successfully!");
+        }
+      }
+    } catch (e) {
+      console.error("Error patching workersEnv.MYBROWSER:", e);
+    }
+
     // 1. Clean up stale sessions
     const cleared = await this.clearStaleSessions();
     if (cleared > 0) {
@@ -136,7 +209,9 @@ export class StagehandBrowserHelper {
     }
 
     // 2. Check for limits and build connection string
-    let cdpUrl = endpointURLString(this.browserBinding);
+    const defaultCdpUrl = endpointURLString(this.browserBinding);
+    let cdpUrl = defaultCdpUrl;
+    let usingExistingSession = false;
 
     // Try to connect using existing sessions if available
     try {
@@ -151,6 +226,7 @@ export class StagehandBrowserHelper {
           const parsedUrl = new URL(rawUrl);
           parsedUrl.searchParams.set("browser_session", sessionId);
           cdpUrl = parsedUrl.toString();
+          usingExistingSession = true;
         }
       }
     } catch (err) {
@@ -163,26 +239,24 @@ export class StagehandBrowserHelper {
       logger: (line) => console.log(`[LLMClient] ${line.category}: ${line.message}`),
     });
 
-    this.stagehand = new Stagehand({
-      env: "LOCAL",
-      localBrowserLaunchOptions: {
-        cdpUrl,
-      },
-      llmClient,
-      modelName: "google/gemini-2.0-flash",
-      modelClientOptions: {
-        apiKey: this.apiKey || "dummy-key",
-      },
-      verbose: 1,
-    });
+    const createStagehand = (url: string) => {
+      return new Stagehand({
+        env: "LOCAL",
+        localBrowserLaunchOptions: {
+          cdpUrl: url,
+        },
+        llmClient,
+        modelName: "google/gemini-2.0-flash",
+        modelClientOptions: {
+          apiKey: this.apiKey || "dummy-key",
+        },
+        verbose: 1,
+      });
+    };
 
-    try {
-      lastCDPError = null;
-      await this.stagehand.init();
-
-      // Block tracking scripts, ads, analytics, and heavy media assets to minimize browser rendering time
-      if (this.stagehand.page && typeof this.stagehand.page.route === "function") {
-        await this.stagehand.page.route("**/*", (route) => {
+    const setupBlocker = async (page: any) => {
+      if (page && typeof page.route === "function") {
+        await page.route("**/*", (route: any) => {
           const request = route.request();
           const resourceType = request.resourceType();
           const url = request.url();
@@ -207,7 +281,30 @@ export class StagehandBrowserHelper {
           }
         });
       }
+    };
+
+    this.stagehand = createStagehand(cdpUrl);
+
+    try {
+      lastCDPError = null;
+      await this.stagehand.init();
+      await setupBlocker(this.getActivePage());
     } catch (err) {
+      if (usingExistingSession) {
+        console.warn("Failed to connect to existing session, retrying with a fresh session...", err);
+        try {
+          cdpUrl = defaultCdpUrl;
+          usingExistingSession = false;
+          lastCDPError = null;
+          this.stagehand = createStagehand(cdpUrl);
+          await this.stagehand.init();
+          await setupBlocker(this.getActivePage());
+          return; // Success on retry
+        } catch (retryErr) {
+          err = retryErr;
+        }
+      }
+
       const activeErr = lastCDPError || err;
       const errMsg = activeErr instanceof Error ? activeErr.message : String(activeErr);
       if (errMsg.includes("429") || errMsg.toLowerCase().includes("rate limit") || errMsg.includes("Unable to create new browser")) {
@@ -236,14 +333,45 @@ export class StagehandBrowserHelper {
     }
   }
 
+  private getActivePage(): any {
+    if (!this.stagehand) throw new Error("Browser not initialized");
+    const currentPage = this.stagehand.page;
+    try {
+      const context = this.stagehand.context;
+      if (context) {
+        const pages = context.pages();
+        if (pages && pages.length > 0) {
+          // Find the last opened page that is not closed
+          for (let i = pages.length - 1; i >= 0; i--) {
+            const p = pages[i];
+            if (p && !p.isClosed()) {
+              if (p !== currentPage) {
+                console.log(`[StagehandBrowserHelper] Switching active page to newer tab: ${p.url()}`);
+              }
+              return p;
+            }
+          }
+        }
+      }
+    } catch (e) {
+      console.warn("[StagehandBrowserHelper] Failed to inspect pages in context:", e);
+    }
+    return currentPage;
+  }
+
   async goto(url: string): Promise<void> {
     if (!this.stagehand) throw new Error("Browser not initialized");
     console.log(`Navigating to ${url}...`);
-    await this.stagehand.page.goto(url, { waitUntil: "domcontentloaded" });
+    await this.getActivePage().goto(url, { waitUntil: "domcontentloaded" });
   }
 
   async getPageUrl(): Promise<string> {
-    return this.stagehand ? this.stagehand.page.url() : "";
+    if (!this.stagehand) return "";
+    try {
+      return this.getActivePage().url();
+    } catch {
+      return "";
+    }
   }
 
   /**
@@ -252,7 +380,7 @@ export class StagehandBrowserHelper {
   async getInteractiveElements(): Promise<{ elements: InteractiveElement[]; textSummary: string }> {
     if (!this.stagehand) throw new Error("Browser not initialized");
 
-    const page = this.stagehand.page;
+    const page = this.getActivePage();
     let elementsData: ElementData[] = [];
     let attempts = 0;
     const maxAttempts = 3;
@@ -352,6 +480,13 @@ export class StagehandBrowserHelper {
         attempts++;
         const message = err instanceof Error ? err.message : String(err);
         console.warn(`Evaluation attempt ${attempts} failed:`, message);
+        
+        const isClosedError = message.toLowerCase().includes("closed") || 
+                              message.toLowerCase().includes("connection lost") || 
+                              message.toLowerCase().includes("lost");
+        if (isClosedError) {
+          throw err;
+        }
         
         try {
           await page.waitForLoadState("load", { timeout: 2000 });
@@ -464,6 +599,7 @@ export class StagehandBrowserHelper {
    */
   async clickElement(id: string): Promise<boolean> {
     if (!this.stagehand) throw new Error("Browser not initialized");
+    const page = this.getActivePage();
     const el = this.interactiveElements.find(e => e.id === id);
     if (!el) {
       console.warn(`Element ID ${id} not found in map`);
@@ -473,17 +609,17 @@ export class StagehandBrowserHelper {
     console.log(`Clicking element: ${id} (XPath: ${el.xpath})`);
     try {
       const instruction = `Click ${this.getElementDescription(el)}`;
-      await this.stagehand.page.act(instruction);
+      await page.act(instruction);
       return true;
     } catch (err) {
       console.warn(`Stagehand act click failed for ${id}, attempting Playwright fallback...`, err);
       try {
-        await this.stagehand.page.locator(`xpath=${el.xpath}`).click({ timeout: 5000 });
+        await page.locator(`xpath=${el.xpath}`).click({ timeout: 5000 });
         return true;
       } catch (fallbackErr) {
         console.error(`Playwright fallback click failed for ${id}:`, fallbackErr);
         try {
-          const clicked = await this.stagehand.page.evaluate((xp) => {
+          const clicked = await page.evaluate((xp) => {
             const res = document.evaluate(xp, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
             const node = res.singleNodeValue as HTMLElement;
             if (node) {
@@ -507,6 +643,7 @@ export class StagehandBrowserHelper {
    */
   async typeElement(id: string, text: string): Promise<boolean> {
     if (!this.stagehand) throw new Error("Browser not initialized");
+    const page = this.getActivePage();
     const el = this.interactiveElements.find(e => e.id === id);
     if (!el) {
       console.warn(`Element ID ${id} not found in map`);
@@ -516,12 +653,12 @@ export class StagehandBrowserHelper {
     console.log(`Typing "${text}" into element: ${id}`);
     try {
       const instruction = `Type "${text}" into ${this.getElementDescription(el)}`;
-      await this.stagehand.page.act(instruction);
+      await page.act(instruction);
       return true;
     } catch (err) {
       console.warn(`Stagehand act type failed for ${id}, attempting Playwright fallback...`, err);
       try {
-        const locator = this.stagehand.page.locator(`xpath=${el.xpath}`);
+        const locator = page.locator(`xpath=${el.xpath}`);
         await locator.fill(text, { timeout: 5000 });
         return true;
       } catch (fallbackErr) {
@@ -536,6 +673,7 @@ export class StagehandBrowserHelper {
    */
   async handleStripeIframe(card: string, expiry: string, cvc: string, name: string): Promise<boolean> {
     if (!this.stagehand) throw new Error("Browser not initialized");
+    const page = this.getActivePage();
 
     console.log("Filling Stripe Checkout inputs using Playwright locator...");
     let cardFilled = false;
@@ -544,7 +682,7 @@ export class StagehandBrowserHelper {
     let nameFilled = false;
 
     try {
-      const frames = this.stagehand.page.frames();
+      const frames = page.frames();
       for (const frame of frames) {
         try {
           for (const sel of STRIPE_CARD_SELECTORS) {
@@ -597,7 +735,7 @@ export class StagehandBrowserHelper {
     console.log("Playwright direct fill was incomplete. Falling back to Stagehand act...");
     try {
       const instruction = `Fill the credit card number with "${card}", expiration date with "${expiry}", CVC/CVV with "${cvc}", and cardholder name with "${name}"`;
-      await this.stagehand.page.act(instruction);
+      await page.act(instruction);
       return true;
     } catch (err) {
       console.error("Stagehand fallback act for Stripe failed:", err);

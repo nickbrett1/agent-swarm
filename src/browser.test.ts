@@ -1,4 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+
+vi.mock("cloudflare:workers", () => ({
+  env: {
+    MYBROWSER: {
+      fetch: vi.fn(),
+    },
+  },
+}));
+
 import { StagehandBrowserHelper } from "./browser.js";
 import { Stagehand } from "@browserbasehq/stagehand";
 import puppeteer from "@cloudflare/puppeteer";
