@@ -179,6 +179,34 @@ export class StagehandBrowserHelper {
     try {
       lastCDPError = null;
       await this.stagehand.init();
+
+      // Block tracking scripts, ads, analytics, and heavy media assets to minimize browser rendering time
+      if (this.stagehand.page && typeof this.stagehand.page.route === "function") {
+        await this.stagehand.page.route("**/*", (route) => {
+          const request = route.request();
+          const resourceType = request.resourceType();
+          const url = request.url();
+
+          const isTracker = 
+            url.includes("google-analytics.com") ||
+            url.includes("googletagmanager.com") ||
+            url.includes("doubleclick.net") ||
+            url.includes("facebook.net") ||
+            url.includes("hotjar.com") ||
+            url.includes("mixpanel.com") ||
+            url.includes("segment.io");
+
+          const isHeavyAsset = 
+            resourceType === "media" || 
+            resourceType === "font";
+
+          if (isTracker || isHeavyAsset) {
+            route.abort();
+          } else {
+            route.continue();
+          }
+        });
+      }
     } catch (err) {
       const activeErr = lastCDPError || err;
       const errMsg = activeErr instanceof Error ? activeErr.message : String(activeErr);

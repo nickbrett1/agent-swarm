@@ -176,7 +176,7 @@ export class ShopperAgent extends Agent<Env, ShopperState> {
       await helper.init();
       await helper.goto(targetUrl);
       
-      const maxSteps = 25;
+      const maxSteps = 12;
       let step = 0;
       let finished = false;
       let outcomeSummary = "";
@@ -272,7 +272,7 @@ export class ShopperAgent extends Agent<Env, ShopperState> {
                 await helper.wait(2000);
               }
             } else {
-              await helper.wait(1500); // Wait for dynamic layout/routing
+              await helper.wait(250); // Wait for dynamic layout/routing
             }
             break;
           }
@@ -306,7 +306,7 @@ export class ShopperAgent extends Agent<Env, ShopperState> {
             } else {
               console.warn(JSON.stringify({ message: "Could not find Stripe inputs. Continuing in case fields are on main page..." }));
             }
-            await helper.wait(1000);
+            await helper.wait(200);
             break;
           }
 
@@ -330,7 +330,7 @@ export class ShopperAgent extends Agent<Env, ShopperState> {
         }
 
         // Small cooldown between actions
-        await helper.wait(1000);
+        await helper.wait(100);
       }
 
       if (!finished) {
