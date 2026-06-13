@@ -631,6 +631,7 @@ export default {
             allowedBrowserAcquisitions: limits.allowedBrowserAcquisitions,
             timeUntilNextAcquisition: limits.timeUntilNextAllowedBrowserAcquisition,
             usedBrowserTimeSeconds: (limits as any).usedBrowserTimeSeconds || 0,
+            timeUntilBrowserTimeReset: (limits as any).timeUntilBrowserTimeReset,
             browserTimeSecondsLimit: env.BROWSER_TIME_LIMIT_MOCK !== undefined ? 
               Number(env.BROWSER_TIME_LIMIT_MOCK) : 
               ((limits as any).browserTimeSecondsLimit !== undefined ? 
@@ -640,11 +641,10 @@ export default {
 
           if (
             browserLimits.browserTimeSecondsLimit !== "unlimited" &&
-            browserLimits.usedBrowserTimeSeconds >= browserLimits.browserTimeSecondsLimit
+            browserLimits.usedBrowserTimeSeconds >= browserLimits.browserTimeSecondsLimit &&
+            browserLimits.timeUntilBrowserTimeReset === undefined
           ) {
-            browserLimits.timeUntilBrowserTimeReset = (limits as any).timeUntilBrowserTimeReset !== undefined
-              ? (limits as any).timeUntilBrowserTimeReset
-              : 0;
+            browserLimits.timeUntilBrowserTimeReset = 0;
           }
         } catch (err) {
           browserLimits = {

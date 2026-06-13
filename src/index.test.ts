@@ -439,6 +439,27 @@ describe('Worker Default Export', () => {
     expect(data.browser.browserTimeSecondsLimit).toBe(expectedLimit);
   });
 
+  it('should return timeUntilBrowserTimeReset when limits are exceeded', async () => {
+    const mockBrowserWorker = {};
+    const env = {
+      MYBROWSER: mockBrowserWorker,
+    };
+
+    const data = await testLimitsFetch(env, () => setupMockLimits({
+      activeSessions: [],
+      maxConcurrentSessions: 4,
+      allowedBrowserAcquisitions: 1,
+      timeUntilNextAllowedBrowserAcquisition: 0,
+      usedBrowserTimeSeconds: 650,
+      browserTimeSecondsLimit: 600,
+      timeUntilBrowserTimeReset: 300,
+    }));
+
+    expect(data.browser.configured).toBe(true);
+    expect(data.browser.usedBrowserTimeSeconds).toBe(650);
+    expect(data.browser.timeUntilBrowserTimeReset).toBe(300);
+  });
+
   it('should use BROWSER_TIME_LIMIT_MOCK when defined in env', async () => {
     const mockBrowserWorker = {};
     const env = {
