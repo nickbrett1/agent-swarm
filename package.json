@@ -9,14 +9,19 @@
     "dev": "./scripts/run-wrangler-dev.sh",
     "deploy": "wrangler deploy",
     "config": "./scripts/setup-wrangler-config.sh",
-    "test": "vitest run --coverage"
+    "test": "vitest run --coverage",
+    "test:integration": "node scripts/test-agent.js"
   },
   "dependencies": {
+    "@browserbasehq/stagehand": "2.5.x",
+    "@cloudflare/playwright": "^1.3.0",
     "@cloudflare/puppeteer": "latest",
     "agents": "latest",
+    "dotenv": "^17.4.2",
     "ipaddr.js": "^2.4.0",
     "jsdom": "^29.1.1",
-    "vitest": "^4.1.8"
+    "vitest": "^4.1.8",
+    "zod-to-json-schema": "^3.25.2"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20260608.1",

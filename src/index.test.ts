@@ -14,6 +14,28 @@ vi.mock('@cloudflare/puppeteer', () => ({
   },
 }));
 
+vi.mock('@cloudflare/playwright', () => ({
+  endpointURLString: vi.fn().mockReturnValue('wss://dummy-cdp-url'),
+}));
+
+vi.mock('@browserbasehq/stagehand', () => ({
+  Stagehand: vi.fn().mockImplementation(function() {
+    return {
+      init: vi.fn(),
+      close: vi.fn(),
+      page: {
+        goto: vi.fn(),
+        url: vi.fn().mockReturnValue('https://example.com'),
+        evaluate: vi.fn(),
+        locator: vi.fn(),
+        frames: vi.fn().mockReturnValue([]),
+        act: vi.fn(),
+      }
+    };
+  }),
+  LLMClient: class {},
+}));
+
 // Mock the agents module so that extending Agent doesn't try to invoke cloudflare native bindings
 vi.mock('agents', () => ({
   Agent: class {

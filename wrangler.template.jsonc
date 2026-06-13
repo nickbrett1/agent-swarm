@@ -6,6 +6,9 @@
   "compatibility_flags": [
     "nodejs_compat"
   ],
+  "alias": {
+    "playwright": "@cloudflare/playwright"
+  },
   "browser": {
     "binding": "MYBROWSER",
     "remote": true

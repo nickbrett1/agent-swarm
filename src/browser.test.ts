@@ -1,11 +1,10 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { PuppeteerBrowserHelper } from './browser.js';
-import puppeteer from '@cloudflare/puppeteer';
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { StagehandBrowserHelper } from "./browser.js";
+import { Stagehand } from "@browserbasehq/stagehand";
+import puppeteer from "@cloudflare/puppeteer";
 
-vi.mock('@cloudflare/puppeteer', () => ({
+vi.mock("@cloudflare/puppeteer", () => ({
   default: {
-    launch: vi.fn(),
-    connect: vi.fn(),
     sessions: vi.fn().mockResolvedValue([]),
     limits: vi.fn().mockResolvedValue({
       activeSessions: [],
@@ -17,543 +16,311 @@ vi.mock('@cloudflare/puppeteer', () => ({
   },
 }));
 
-describe('PuppeteerBrowserHelper', () => {
+vi.mock("@cloudflare/playwright", () => ({
+  endpointURLString: vi.fn().mockReturnValue("wss://dummy-cdp-url"),
+}));
 
-function setupMockBrowser(pageOverrides: any = {}, browserOverrides: any = {}) {
-  const mockPage: any = {
-    setViewport: vi.fn(),
-    setDefaultTimeout: vi.fn(),
-    setRequestInterception: vi.fn().mockResolvedValue(true),
-    on: vi.fn(),
-    url: vi.fn().mockReturnValue('https://example.com'),
-    '$$': vi.fn().mockResolvedValue([]),
-    evaluate: vi.fn(),
-    ...pageOverrides,
-  };
+const mockPage = {
+  goto: vi.fn(),
+  url: vi.fn().mockReturnValue("https://example.com"),
+  evaluate: vi.fn(),
+  locator: vi.fn(),
+  frames: vi.fn().mockReturnValue([]),
+  act: vi.fn(),
+  waitForLoadState: vi.fn(),
+};
 
-  const mockFrame = {
-    executionContext: vi.fn().mockResolvedValue({
-      evaluate: vi.fn().mockImplementation((fn, ...args) => {
-        if (mockPage.evaluate) {
-          return mockPage.evaluate(fn, ...args);
-        }
-        return typeof fn === 'function' ? fn(...args) : undefined;
-      })
+const mockStagehand = {
+  init: vi.fn(),
+  close: vi.fn(),
+  page: mockPage,
+};
+
+vi.mock("@browserbasehq/stagehand", () => {
+  return {
+    Stagehand: vi.fn().mockImplementation(function () {
+      return mockStagehand;
     }),
-    evaluate: vi.fn().mockImplementation((fn, ...args) => {
-      if (mockPage.evaluate) {
-        return mockPage.evaluate(fn, ...args);
-      }
-      return typeof fn === 'function' ? fn(...args) : undefined;
-    })
+    LLMClient: class {},
   };
+});
 
-  mockPage.mainFrame = vi.fn().mockReturnValue(mockFrame);
-
-  const mockBrowser = {
-    newPage: vi.fn().mockResolvedValue(mockPage),
-    ...browserOverrides,
-  };
-  (puppeteer.launch as any).mockResolvedValue(mockBrowser);
-  return { mockBrowser, mockPage };
-}
-
-  let helper: PuppeteerBrowserHelper;
-  const mockBrowserBinding = {} as any;
+describe("StagehandBrowserHelper", () => {
+  let helper: StagehandBrowserHelper;
+  const mockBrowserBinding = {
+    fetch: vi.fn().mockResolvedValue({ text: () => Promise.resolve("OK") }),
+  } as any;
 
   beforeEach(() => {
     vi.clearAllMocks();
-    // @ts-ignore - Mocking BrowserWorker is complex and this mock is enough for the tests
-    helper = new PuppeteerBrowserHelper(mockBrowserBinding);
+    mockPage.goto.mockReset();
+    mockPage.url.mockReturnValue("https://example.com");
+    mockPage.evaluate.mockReset();
+    mockPage.locator.mockReset();
+    mockPage.frames.mockReturnValue([]);
+    mockPage.act.mockReset();
+    mockPage.waitForLoadState.mockReset();
+    mockStagehand.init.mockReset();
+    mockStagehand.close.mockReset();
+
+    helper = new StagehandBrowserHelper(mockBrowserBinding, {}, "test-gemini-key");
   });
 
-  it.each([
-    { method: 'goto', args: ['https://example.com'] },
-    { method: 'getInteractiveElements', args: [] },
-    { method: 'clickElement', args: ['some_id'] },
-    { method: 'typeElement', args: ['some_id', 'test'] },
-    { method: 'handleStripeIframe', args: ['4242', '12/28', '123', 'Test'] },
-    { method: 'findElement', args: ['some_id'] } // private, handled below using casting
-  ])('should throw error on $method if not initialized', async ({ method, args }) => {
-    const fn = (helper as any)[method].bind(helper);
-    await expect(fn(...args)).rejects.toThrow('Browser not initialized');
-  });
-
-  it('should initialize browser and page successfully', async () => {
-    const { mockBrowser, mockPage } = setupMockBrowser();
-
+  it("should initialize Stagehand successfully", async () => {
     await helper.init();
 
-    expect(puppeteer.launch).toHaveBeenCalledWith(mockBrowserBinding, { keep_alive: 10000 });
-    expect(mockBrowser.newPage).toHaveBeenCalled();
-    expect(mockPage.setViewport).toHaveBeenCalledWith({ width: 1280, height: 720 });
-    expect(mockPage.setDefaultTimeout).toHaveBeenCalledWith(15000);
+    expect(Stagehand).toHaveBeenCalled();
+    expect(mockStagehand.init).toHaveBeenCalled();
   });
 
-  it('should close browser safely', async () => {
-    const mockClose = vi.fn();
-    setupMockBrowser({}, { close: mockClose });
-
+  it("should close browser safely", async () => {
     await helper.init();
     await helper.close();
 
-    expect(mockClose).toHaveBeenCalled();
+    expect(mockStagehand.close).toHaveBeenCalled();
   });
 
-  it('should ignore close if already closed or errors', async () => {
-    const mockClose = vi.fn().mockRejectedValue(new Error('Already closed'));
-    setupMockBrowser({}, { close: mockClose });
-
+  it("should ignore close error safely", async () => {
+    mockStagehand.close.mockRejectedValueOnce(new Error("Stagehand close error"));
     await helper.init();
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
     await helper.close();
-    expect(mockClose).toHaveBeenCalled();
-  });
 
-  async function testRateLimitError(
-    launchMockSetup: () => void,
-    mockLimits: any,
-    expectedMessage: string
-  ) {
-    launchMockSetup();
-    const originalLimits = puppeteer.limits;
-    puppeteer.limits = vi.fn().mockResolvedValue(mockLimits) as any;
-
-    try {
-      await helper.init();
-      throw new Error('Should have thrown an error');
-    } catch (err: any) {
-      expect(err.message).toContain(expectedMessage);
-    } finally {
-      puppeteer.limits = originalLimits;
-    }
-  }
-
-  it('should expose limits on initial launch rate limit error', async () => {
-    await testRateLimitError(
-      () => {
-        setupMockBrowser();
-        const rateLimitError = new Error('Unable to create new browser: code: 429: message: Rate limit exceeded');
-        (puppeteer.launch as any).mockRejectedValue(rateLimitError);
-      },
-      {
-        activeSessions: [{ id: '1' }, { id: '2' }],
-        maxConcurrentSessions: 2,
-        allowedBrowserAcquisitions: 0,
-        timeUntilNextAllowedBrowserAcquisition: 5000,
-      },
-      'Cloudflare Limits: Active Sessions=2/2, Acquisitions Allowed=0, Time Until Next Acquisition=5000ms'
-    );
-  });
-
-  it('should expose limits on retry launch rate limit error', async () => {
-    await testRateLimitError(
-      () => {
-        setupMockBrowser();
-        const initialError = new Error('Some other launch error');
-        const rateLimitError = new Error('Unable to create new browser: code: 429: message: Rate limit exceeded');
-        (puppeteer.launch as any)
-          .mockRejectedValueOnce(initialError)
-          .mockRejectedValue(rateLimitError);
-      },
-      {
-        activeSessions: [{ id: '1' }],
-        maxConcurrentSessions: 2,
-        allowedBrowserAcquisitions: 0,
-        timeUntilNextAllowedBrowserAcquisition: 3000,
-      },
-      'Cloudflare Limits: Active Sessions=1/2, Acquisitions Allowed=0, Time Until Next Acquisition=3000ms'
-    );
-  });
-
-  it('should ignore close if a string error is thrown', async () => {
-    const mockClose = vi.fn().mockRejectedValue('String error');
-    setupMockBrowser({}, { close: mockClose });
-
-    await helper.init();
-    const warnSpy = vi.spyOn(console, 'warn');
-    await helper.close();
-    expect(mockClose).toHaveBeenCalled();
-    expect(warnSpy).toHaveBeenCalledWith("Ignoring error closing/disconnecting browser:", "String error");
+    expect(mockStagehand.close).toHaveBeenCalled();
+    expect(warnSpy).toHaveBeenCalledWith("Error closing Stagehand:", "Stagehand close error");
     warnSpy.mockRestore();
   });
 
-
-  it('should navigate to url', async () => {
-    const mockGoto = vi.fn();
-    setupMockBrowser({ goto: mockGoto });
-
+  it("should navigate to url", async () => {
     await helper.init();
-    await helper.goto('https://example.com');
+    await helper.goto("https://example.com");
 
-    expect(mockGoto).toHaveBeenCalledWith('https://example.com', { waitUntil: 'domcontentloaded' });
+    expect(mockPage.goto).toHaveBeenCalledWith("https://example.com", { waitUntil: "domcontentloaded" });
   });
 
-  it('should get page url', async () => {
-    const mockUrl = vi.fn().mockReturnValue('https://example.com');
-    setupMockBrowser({ url: mockUrl });
-
+  it("should get page url", async () => {
     await helper.init();
     const url = await helper.getPageUrl();
 
-    expect(url).toBe('https://example.com');
+    expect(url).toBe("https://example.com");
   });
 
-  it('should return empty url if page not initialized', async () => {
+  it("should return empty url if not initialized", async () => {
     const url = await helper.getPageUrl();
-    expect(url).toBe('');
+    expect(url).toBe("");
   });
 
-  it('should handle edge case where this.page is falsy', async () => {
-    const customHelper = new PuppeteerBrowserHelper({} as any);
-    // initializing PuppeteerBrowserHelper without a page object
-    const url = await customHelper.getPageUrl();
-    expect(url).toBe('');
+  it("should throw error on goto if not initialized", async () => {
+    await expect(helper.goto("https://example.com")).rejects.toThrow("Browser not initialized");
   });
 
-  it('should bubble up error if page.url() throws an exception', async () => {
-    const mockUrl = vi.fn().mockImplementation(() => {
-      throw new Error('Page disconnected');
-    });
-    setupMockBrowser({ url: mockUrl });
-
-    await helper.init();
-    await expect(helper.getPageUrl()).rejects.toThrow('Page disconnected');
+  it("should throw error on getInteractiveElements if not initialized", async () => {
+    await expect(helper.getInteractiveElements()).rejects.toThrow("Browser not initialized");
   });
 
-  it('should return url when page is about:blank', async () => {
-    const mockUrl = vi.fn().mockReturnValue('about:blank');
-    setupMockBrowser({ url: mockUrl });
-
-    await helper.init();
-    const url = await helper.getPageUrl();
-    expect(url).toBe('about:blank');
-  });
-
-  it('should get interactive elements successfully', async () => {
-    const mockEvaluate = vi.fn().mockResolvedValue([
-      { tag: 'button', type: '', text: 'Submit', placeholder: '', name: '', role: '', xpath: '//button' }
+  it("should get interactive elements successfully", async () => {
+    mockPage.evaluate.mockResolvedValueOnce([
+      { tag: "button", type: "", text: "Submit", placeholder: "", name: "", role: "", xpath: "//button" }
     ]);
-    const mockUrl = vi.fn().mockReturnValue('https://example.com');
-    setupMockBrowser({ evaluate: mockEvaluate, url: mockUrl });
-
     await helper.init();
     const result = await helper.getInteractiveElements();
 
     expect(result.elements.length).toBe(1);
-    expect(result.elements[0].id).toBe('button_0');
-    expect(result.elements[0].text).toBe('Submit');
-    expect(result.textSummary).toContain('button_0');
+    expect(result.elements[0].id).toBe("button_0");
+    expect(result.elements[0].text).toBe("Submit");
+    expect(result.textSummary).toContain("button_0");
   });
 
-
-  async function testInteractiveElementsFailure(
-    evaluateMock: any,
-    url: string,
-    assertions: (result: any) => void
-  ) {
-    setupMockBrowser({
-      evaluate: evaluateMock,
-      url: vi.fn().mockReturnValue(url),
-      waitForNavigation: vi.fn().mockResolvedValue(undefined)
+  it("should handle transient detached frame errors in getInteractiveElements", async () => {
+    let calls = 0;
+    mockPage.evaluate.mockImplementation(() => {
+      calls++;
+      if (calls === 1) {
+        throw new Error("Attempted to use detached Frame");
+      }
+      return [{ tag: "button", type: "", text: "Success", placeholder: "", name: "", role: "", xpath: "//button" }];
     });
 
     await helper.init();
-    const waitSpy = vi.spyOn(helper, 'wait').mockResolvedValue(undefined);
-
+    const waitSpy = vi.spyOn(helper, "wait").mockResolvedValue();
     const result = await helper.getInteractiveElements();
-    assertions(result);
 
+    expect(result.elements.length).toBe(1);
+    expect(result.elements[0].text).toBe("Success");
+    expect(calls).toBe(2);
     waitSpy.mockRestore();
-  }
-
-  it('should handle errors in getInteractiveElements and retry', async () => {
-    let callCount = 0;
-    const mockEvaluate = vi.fn().mockImplementation(() => {
-      callCount++;
-      if (callCount < 3) {
-        throw new Error('Timeout');
-      }
-      return [{ tag: 'button', type: '', text: 'Retry Success', placeholder: '', name: '', role: '', xpath: '//button' }];
-    });
-
-    await testInteractiveElementsFailure(mockEvaluate, 'https://example.com', (result) => {
-      expect(mockEvaluate).toHaveBeenCalledTimes(3);
-      expect(result.elements.length).toBe(1);
-      expect(result.elements[0].text).toBe('Retry Success');
-    });
   });
 
-  it('should recover if page.evaluate throws transient detached frame error in getInteractiveElements', async () => {
-    let callCount = 0;
-    const mockEvaluate = vi.fn().mockImplementation(() => {
-      callCount++;
-      if (callCount < 3) {
-        throw new Error("Attempted to use detached Frame '95CB2584FB21941F5737E7A4A726D588'");
-      }
-      return [{ tag: 'button', type: '', text: 'Recovered Success', placeholder: '', name: '', role: '', xpath: '//button' }];
-    });
-
-    await testInteractiveElementsFailure(mockEvaluate, 'https://example.com/checkout', (result) => {
-      expect(mockEvaluate).toHaveBeenCalledTimes(3);
-      expect(result.elements.length).toBe(1);
-      expect(result.elements[0].text).toBe('Recovered Success');
-    });
-  });
-
-  it('should handle persistent detached frame error in getInteractiveElements gracefully and return empty list', async () => {
-    const mockEvaluate = vi.fn().mockRejectedValue(new Error("Attempted to use detached Frame '95CB2584FB21941F5737E7A4A726D588'"));
-
-    await testInteractiveElementsFailure(mockEvaluate, 'https://example.com/checkout', (result) => {
-      expect(mockEvaluate).toHaveBeenCalledTimes(3);
-      expect(result.elements).toEqual([]);
-      expect(result.textSummary).toContain('Warning: Browser is in a transient detached frame state. Waiting for recovery...');
-    });
-  });
-
-  it('should handle success page detected during getInteractiveElements error', async () => {
-    const mockEvaluate = vi.fn().mockRejectedValue(new Error('Evaluation failed'));
-    const mockUrl = vi.fn().mockReturnValue('https://example.com/success');
-    setupMockBrowser({ evaluate: mockEvaluate, url: mockUrl, waitForNavigation: vi.fn().mockResolvedValue(undefined) });
+  it("should return empty elements if persistent detached frame error occurs in getInteractiveElements", async () => {
+    mockPage.evaluate.mockRejectedValue(new Error("Attempted to use detached Frame"));
 
     await helper.init();
+    const waitSpy = vi.spyOn(helper, "wait").mockResolvedValue();
     const result = await helper.getInteractiveElements();
 
     expect(result.elements).toEqual([]);
-    expect(result.textSummary).toContain('Redirected to success page');
+    expect(result.textSummary).toContain("transient detached frame state");
+    waitSpy.mockRestore();
   });
 
+  it("should handle success page detected during getInteractiveElements error", async () => {
+    mockPage.evaluate.mockRejectedValue(new Error("Evaluation failed"));
+    mockPage.url.mockReturnValue("https://example.com/success");
 
-  it('should return false if element ID not found for click or type', async () => {
-    setupMockBrowser();
     await helper.init();
+    const waitSpy = vi.spyOn(helper, "wait").mockResolvedValue();
+    const result = await helper.getInteractiveElements();
 
-    const clickResult = await helper.clickElement('nonexistent_id');
-    expect(clickResult).toBe(false);
-
-    const typeResult = await helper.typeElement('nonexistent_id', 'text');
-    expect(typeResult).toBe(false);
+    expect(result.elements).toEqual([]);
+    expect(result.textSummary).toContain("Redirected to success page");
+    waitSpy.mockRestore();
   });
 
-  describe('findElement', () => {
-
-    it('should return null and warn if ID is not found in elementsMap', async () => {
-      setupMockBrowser();
-      await helper.init();
-      const consoleSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-
-      const result = await (helper as any).findElement('missing_id');
-
-      expect(result).toBeNull();
-      expect(consoleSpy).toHaveBeenCalledWith('Element ID missing_id not found in map');
-      consoleSpy.mockRestore();
-    });
-
-    it('should return element: null if page.$$ returns no elements', async () => {
-      const { mockPage } = setupMockBrowser();
-      mockPage.$$ = vi.fn().mockResolvedValue([]);
-      await helper.init();
-      (helper as any).elementsMap.set('test_id', '//button');
-
-      const result = await (helper as any).findElement('test_id');
-
-      expect(result).toEqual({ element: null, xpath: '//button' });
-      expect(mockPage.$$).toHaveBeenCalledWith('xpath///button');
-    });
-
-    it('should return first element and dispose of the rest safely', async () => {
-      const element1 = { id: 1, dispose: vi.fn() };
-      const element2 = { id: 2, dispose: vi.fn().mockRejectedValue(new Error('Dispose error')) };
-      const element3 = { id: 3 }; // no dispose method
-      const element4 = { id: 4, dispose: vi.fn() };
-
-      const { mockPage } = setupMockBrowser();
-      mockPage.$$ = vi.fn().mockResolvedValue([element1, element2, element3, element4]);
-      await helper.init();
-      (helper as any).elementsMap.set('test_id', '//div');
-
-      const result = await (helper as any).findElement('test_id');
-
-      expect(result).toEqual({ element: element1, xpath: '//div' });
-      expect(element2.dispose).toHaveBeenCalled();
-      expect(element4.dispose).toHaveBeenCalled();
-      // element1 is the one returned, it should NOT be disposed
-      expect(element1.dispose).not.toHaveBeenCalled();
-    });
-
-    it('should catch errors during page.$$ and return null', async () => {
-      const { mockPage } = setupMockBrowser();
-      mockPage.$$ = vi.fn().mockRejectedValue(new Error('Query failed'));
-      await helper.init();
-      (helper as any).elementsMap.set('test_id', '//span');
-
-      const consoleSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-
-      const result = await (helper as any).findElement('test_id');
-
-      expect(result).toBeNull();
-      expect(consoleSpy).toHaveBeenCalledWith('Error querying element test_id with xpath //span:', 'Query failed');
-      consoleSpy.mockRestore();
-    });
+  it("should throw error on clickElement if not initialized", async () => {
+    await expect(helper.clickElement("button_0")).rejects.toThrow("Browser not initialized");
   });
 
-  function setupInteractionMock(typeFn: any = vi.fn(), tag = 'input') {
-    const mockEvaluate = vi.fn().mockResolvedValue([{ tag, type: 'text', text: '', placeholder: '', name: '', role: '', xpath: `//${tag}` }]);
-    const mockClick = vi.fn();
-    const mockScrollIntoView = vi.fn();
-    const mockPress = vi.fn();
-    const { mockPage } = setupMockBrowser({ evaluate: mockEvaluate, url: vi.fn().mockReturnValue('https://example.com'), '$$': vi.fn().mockResolvedValue([{ scrollIntoView: mockScrollIntoView, click: mockClick, type: typeFn }]), keyboard: { press: mockPress } });
-    return { mockPage, mockClick, mockScrollIntoView, mockPress, typeFn };
-  }
-
-  it('should click element successfully using xpath query', async () => {
-    const { mockPage, mockScrollIntoView, mockClick } = setupInteractionMock(vi.fn(), 'button');
+  it("should return false if click element is not found in map", async () => {
     await helper.init();
-    await helper.getInteractiveElements();
-    expect(await helper.clickElement('button_0')).toBe(true);
-    expect(mockPage.$$).toHaveBeenCalledWith('xpath///button');
-    expect(mockScrollIntoView).toHaveBeenCalled();
-    expect(mockClick).toHaveBeenCalled();
+    const result = await helper.clickElement("nonexistent");
+    expect(result).toBe(false);
   });
 
-  it('should type element successfully', async () => {
-    const { mockPage, mockScrollIntoView, mockClick, mockPress, typeFn } = setupInteractionMock();
-    await helper.init();
-    await helper.getInteractiveElements();
-    expect(await helper.typeElement('input_0', 'test value')).toBe(true);
-    expect(mockPage.$$).toHaveBeenCalledWith('xpath///input');
-    expect(mockScrollIntoView).toHaveBeenCalled();
-    expect(mockClick).toHaveBeenCalledWith({ clickCount: 3 });
-    expect(mockPress).toHaveBeenCalledWith('Backspace');
-    expect(typeFn).toHaveBeenCalledWith('test value');
-  });
-
-  it('should handle errors in typeElement and return false', async () => {
-    setupInteractionMock(vi.fn().mockRejectedValue(new Error('Typing failed')));
-    await helper.init();
-    await helper.getInteractiveElements();
-    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-    expect(await helper.typeElement('input_0', 'test value')).toBe(false);
-    expect(consoleSpy).toHaveBeenCalledWith('Error typing into element input_0:', expect.any(Error));
-    consoleSpy.mockRestore();
-  });
-
-
-  it('should handle detached frame error in both click and type elements', async () => {
-    const mockEvaluate = vi.fn().mockResolvedValue([
-      { tag: 'button', type: '', text: 'Submit', placeholder: '', name: '', role: '', xpath: '//button' },
-      { tag: 'input', type: 'text', text: '', placeholder: '', name: '', role: '', xpath: '//input' }
+  it("should click element successfully using Stagehand act", async () => {
+    mockPage.evaluate.mockResolvedValueOnce([
+      { tag: "button", type: "", text: "Click Me", placeholder: "", name: "", role: "", xpath: "//button" }
     ]);
-    setupMockBrowser({ evaluate: mockEvaluate, '$$': vi.fn().mockRejectedValue(new Error("Attempted to use detached Frame 'some_frame_id'")) });
-
     await helper.init();
     await helper.getInteractiveElements();
 
-    const consoleSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    mockPage.act.mockResolvedValueOnce(undefined);
+    const success = await helper.clickElement("button_0");
 
-    expect(await helper.clickElement('button_0')).toBe(false);
-    expect(await helper.typeElement('input_1', 'test value')).toBe(false);
-
-    expect(consoleSpy.mock.calls.some(call => call[0] && String(call[0]).includes('Error querying element'))).toBe(true);
-    consoleSpy.mockRestore();
+    expect(success).toBe(true);
+    expect(mockPage.act).toHaveBeenCalledWith('Click the button with text "Click Me"');
   });
 
-  it('should wait correctly', async () => {
-    const start = Date.now();
-    await helper.wait(100);
-    const end = Date.now();
-    expect(end - start).toBeGreaterThanOrEqual(99);
-  });
+  it("should fallback to Playwright locator click if Stagehand act fails", async () => {
+    mockPage.evaluate.mockResolvedValueOnce([
+      { tag: "button", type: "", text: "Click Me", placeholder: "", name: "", role: "", xpath: "//button" }
+    ]);
+    await helper.init();
+    await helper.getInteractiveElements();
 
-  it('should handle stripe iframe when fields found', async () => {
-    const mockFrame = {
-      $: vi.fn().mockImplementation((selector: string) => {
-        if (
-          selector.includes('input#cardNumber') ||
-          selector.includes('input#cardExpiry') ||
-          selector.includes('input#cardCvc') ||
-          selector.includes('input#billingName')
-        ) {
-           return Promise.resolve({
-             scrollIntoView: vi.fn(),
-             evaluate: vi.fn().mockImplementation((fn, value) => {
-               // Simulate the evaluate block execution
-               const mockElement = {
-                 value: '',
-                 dispatchEvent: vi.fn()
-               };
-               // The evaluate function is passed dynamically, we call it to ensure it executes
-               fn(mockElement, value);
-             })
-           });
-        }
-        return Promise.resolve(null);
-      })
+    mockPage.act.mockRejectedValueOnce(new Error("Act failed"));
+    const mockLocator = {
+      click: vi.fn().mockResolvedValue(undefined),
     };
-    setupMockBrowser({ frames: vi.fn().mockReturnValue([mockFrame]) });
+    mockPage.locator.mockReturnValueOnce(mockLocator);
 
-    await helper.init();
-    const result = await helper.handleStripeIframe('4242', '12/28', '123', 'Test User');
-    expect(result).toBe(true);
+    const success = await helper.clickElement("button_0");
+
+    expect(success).toBe(true);
+    expect(mockPage.locator).toHaveBeenCalledWith("xpath=//button");
+    expect(mockLocator.click).toHaveBeenCalled();
   });
 
-  it('should return false handle stripe iframe when fields not found', async () => {
-    const mockFrame = {
-      $: vi.fn().mockResolvedValue(null)
+  it("should fallback to direct evaluate click if Playwright locator click fails", async () => {
+    mockPage.evaluate.mockResolvedValueOnce([
+      { tag: "button", type: "", text: "Click Me", placeholder: "", name: "", role: "", xpath: "//button" }
+    ]);
+    await helper.init();
+    await helper.getInteractiveElements();
+
+    mockPage.act.mockRejectedValueOnce(new Error("Act failed"));
+    const mockLocator = {
+      click: vi.fn().mockRejectedValue(new Error("Locator click failed")),
     };
-    setupMockBrowser({ frames: vi.fn().mockReturnValue([mockFrame]) });
+    mockPage.locator.mockReturnValueOnce(mockLocator);
 
-    await helper.init();
-    const result = await helper.handleStripeIframe('4242', '12/28', '123', 'Test User');
-    expect(result).toBe(false);
+    // Direct evaluate mock
+    mockPage.evaluate.mockResolvedValueOnce(true);
+
+    const success = await helper.clickElement("button_0");
+
+    expect(success).toBe(true);
+    expect(mockPage.evaluate).toHaveBeenCalledWith(expect.any(Function), "//button");
   });
 
-
-
-  function setupFallbackMock(nodeValue: any) {
-    const originalDocument = global.document;
-    const originalXPathResult = global.XPathResult;
-    global.document = { evaluate: vi.fn().mockReturnValue({ singleNodeValue: nodeValue }) } as any;
-    global.XPathResult = { FIRST_ORDERED_NODE_TYPE: 9 } as any;
-
-    const { mockPage } = setupMockBrowser({ evaluate: vi.fn().mockImplementation((fn, ...args) => { if (args.length === 0) { return [{ tag: 'button', type: '', text: 'Submit', placeholder: '', name: '', role: '', xpath: '//button' }]; } else { return fn(...args); } }), '$$': vi.fn().mockResolvedValue([]) });
-    return { mockPage, cleanup: () => { global.document = originalDocument; global.XPathResult = originalXPathResult; } };
-  }
-
-  it('should handle evaluation click fallback when node is null', async () => {
-    const { mockPage, cleanup } = setupFallbackMock(null);
+  it("should type element successfully using Stagehand act", async () => {
+    mockPage.evaluate.mockResolvedValueOnce([
+      { tag: "input", type: "text", text: "", placeholder: "Enter name", name: "", role: "", xpath: "//input" }
+    ]);
     await helper.init();
     await helper.getInteractiveElements();
-    expect(await helper.clickElement('button_0')).toBe(false);
-    expect(mockPage.evaluate).toHaveBeenCalledTimes(2);
-    expect(global.document.evaluate).toHaveBeenCalledWith('//button', global.document, null, 9, null);
-    cleanup();
+
+    mockPage.act.mockResolvedValueOnce(undefined);
+    const success = await helper.typeElement("input_0", "John Doe");
+
+    expect(success).toBe(true);
+    expect(mockPage.act).toHaveBeenCalledWith('Type "John Doe" into the input with placeholder/label "Enter name"');
   });
 
-  it('should handle evaluation click fallback', async () => {
-    const mockScrollIntoView = vi.fn();
-    const mockClick = vi.fn();
-    const { mockPage, cleanup } = setupFallbackMock({ scrollIntoView: mockScrollIntoView, click: mockClick });
-
+  it("should fallback to Playwright fill if Stagehand type fails", async () => {
+    mockPage.evaluate.mockResolvedValueOnce([
+      { tag: "input", type: "text", text: "", placeholder: "Enter name", name: "", role: "", xpath: "//input" }
+    ]);
     await helper.init();
     await helper.getInteractiveElements();
-    expect(await helper.clickElement('button_0')).toBe(true);
-    expect(mockPage.evaluate).toHaveBeenCalledTimes(2);
-    expect(global.document.evaluate).toHaveBeenCalledWith('//button', global.document, null, 9, null);
-    expect(mockScrollIntoView).toHaveBeenCalledWith({ block: 'center' });
-    expect(mockClick).toHaveBeenCalled();
-    cleanup();
+
+    mockPage.act.mockRejectedValueOnce(new Error("Act failed"));
+    const mockLocator = {
+      fill: vi.fn().mockResolvedValue(undefined),
+    };
+    mockPage.locator.mockReturnValueOnce(mockLocator);
+
+    const success = await helper.typeElement("input_0", "John Doe");
+
+    expect(success).toBe(true);
+    expect(mockPage.locator).toHaveBeenCalledWith("xpath=//input");
+    expect(mockLocator.fill).toHaveBeenCalledWith("John Doe", { timeout: 5000 });
   });
 
-  it('should handle exception during stripe iframe handling', async () => {
-    setupMockBrowser({ frames: vi.fn().mockImplementation(() => { throw new Error('Frames error'); }) });
-
+  it("should handle Stripe iframe using Stagehand act", async () => {
     await helper.init();
-    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-    const result = await helper.handleStripeIframe('4242', '12/28', '123', 'Test User');
+    mockPage.act.mockResolvedValueOnce(undefined);
 
-    expect(result).toBe(false);
-    expect(consoleSpy).toHaveBeenCalledWith('Exception during Stripe iframe handling:', expect.any(Error));
-    consoleSpy.mockRestore();
+    const success = await helper.handleStripeIframe("4242", "12/28", "123", "John");
+    expect(success).toBe(true);
+    expect(mockPage.act).toHaveBeenCalledWith('Fill the credit card number with "4242", expiration date with "12/28", CVC/CVV with "123", and cardholder name with "John"');
   });
 
+  it("should fallback to Playwright frames filling if Stripe act fails", async () => {
+    await helper.init();
+    mockPage.act.mockRejectedValueOnce(new Error("Act failed"));
+
+    const mockFrame = {
+      locator: vi.fn().mockReturnValue({
+        count: vi.fn().mockResolvedValue(1),
+        fill: vi.fn().mockResolvedValue(undefined),
+      }),
+    };
+    mockPage.frames.mockReturnValue([mockFrame]);
+
+    const success = await helper.handleStripeIframe("4242", "12/28", "123", "John");
+    expect(success).toBe(true);
+    expect(mockFrame.locator).toHaveBeenCalled();
+  });
+
+  it("should handle rate limit errors correctly in init", async () => {
+    const originalLimits = puppeteer.limits;
+    puppeteer.limits = vi.fn().mockResolvedValue({
+      activeSessions: [{ id: "1" }],
+      maxConcurrentSessions: 2,
+      allowedBrowserAcquisitions: 0,
+      timeUntilNextAllowedBrowserAcquisition: 5000,
+    }) as any;
+
+    mockStagehand.init.mockRejectedValueOnce(new Error("Unable to create new browser: Rate limit exceeded"));
+
+    try {
+      await helper.init();
+      throw new Error("Should have thrown error");
+    } catch (err: any) {
+      expect(err.message).toContain("Cloudflare Limits: Active Sessions=1/2");
+    } finally {
+      puppeteer.limits = originalLimits;
+    }
+  });
 });
