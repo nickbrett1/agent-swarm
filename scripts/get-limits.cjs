@@ -25,7 +25,6 @@ const request = http.get(url, (res) => {
   res.on('end', () => {
     if (res.statusCode !== 200) {
       console.error(`\n❌ Request failed with status code ${res.statusCode}`);
-      console.error(`Response: ${data}`);
       process.exit(1);
     }
 
@@ -34,7 +33,6 @@ const request = http.get(url, (res) => {
       printLimits(parsed);
     } catch (err) {
       console.error('\n❌ Failed to parse JSON response:', err.message);
-      console.error(`Response received: ${data}`);
       process.exit(1);
     }
   });
