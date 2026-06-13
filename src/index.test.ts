@@ -417,7 +417,10 @@ describe('Worker Default Export', () => {
     expect(puppeteerMock.limits).toHaveBeenCalledWith(mockBrowserWorker);
   });
 
-  it('should fallback to 600 for free tier when browserTimeSecondsLimit is undefined', async () => {
+  it.each([
+    { tier: 'free tier', sessions: 4, expectedLimit: 600 },
+    { tier: 'paid tier', sessions: 120, expectedLimit: 'unlimited' }
+  ])('should fallback to $expectedLimit for $tier when browserTimeSecondsLimit is undefined', async ({ sessions, expectedLimit }) => {
     const mockBrowserWorker = {};
     const env = {
       MYBROWSER: mockBrowserWorker,
@@ -425,7 +428,7 @@ describe('Worker Default Export', () => {
 
     const data = await testLimitsFetch(env, () => setupMockLimits({
       activeSessions: [],
-      maxConcurrentSessions: 4,
+      maxConcurrentSessions: sessions,
       allowedBrowserAcquisitions: 1,
       timeUntilNextAllowedBrowserAcquisition: 0,
       usedBrowserTimeSeconds: 50,
@@ -433,26 +436,7 @@ describe('Worker Default Export', () => {
 
     expect(data.browser.configured).toBe(true);
     expect(data.browser.usedBrowserTimeSeconds).toBe(50);
-    expect(data.browser.browserTimeSecondsLimit).toBe(600);
-  });
-
-  it('should fallback to unlimited for paid tier when browserTimeSecondsLimit is undefined', async () => {
-    const mockBrowserWorker = {};
-    const env = {
-      MYBROWSER: mockBrowserWorker,
-    };
-
-    const data = await testLimitsFetch(env, () => setupMockLimits({
-      activeSessions: [],
-      maxConcurrentSessions: 120,
-      allowedBrowserAcquisitions: 1,
-      timeUntilNextAllowedBrowserAcquisition: 0,
-      usedBrowserTimeSeconds: 50,
-    }));
-
-    expect(data.browser.configured).toBe(true);
-    expect(data.browser.usedBrowserTimeSeconds).toBe(50);
-    expect(data.browser.browserTimeSecondsLimit).toBe('unlimited');
+    expect(data.browser.browserTimeSecondsLimit).toBe(expectedLimit);
   });
 
   it('should use BROWSER_TIME_LIMIT_MOCK when defined in env', async () => {

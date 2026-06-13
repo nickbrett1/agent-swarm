@@ -187,12 +187,14 @@ describe("StagehandBrowserHelper", () => {
     expect(result).toBe(false);
   });
 
-  it("should click element successfully using Stagehand act", async () => {
-    mockPage.evaluate.mockResolvedValueOnce([
-      { tag: "button", type: "", text: "Click Me", placeholder: "", name: "", role: "", xpath: "//button" }
-    ]);
+  async function setupInteractiveElement(element: any) {
+    mockPage.evaluate.mockResolvedValueOnce([element]);
     await helper.init();
     await helper.getInteractiveElements();
+  }
+
+  it("should click element successfully using Stagehand act", async () => {
+    await setupInteractiveElement({ tag: "button", type: "", text: "Click Me", placeholder: "", name: "", role: "", xpath: "//button" });
 
     mockPage.act.mockResolvedValueOnce(undefined);
     const success = await helper.clickElement("button_0");
@@ -202,11 +204,7 @@ describe("StagehandBrowserHelper", () => {
   });
 
   it("should fallback to Playwright locator click if Stagehand act fails", async () => {
-    mockPage.evaluate.mockResolvedValueOnce([
-      { tag: "button", type: "", text: "Click Me", placeholder: "", name: "", role: "", xpath: "//button" }
-    ]);
-    await helper.init();
-    await helper.getInteractiveElements();
+    await setupInteractiveElement({ tag: "button", type: "", text: "Click Me", placeholder: "", name: "", role: "", xpath: "//button" });
 
     mockPage.act.mockRejectedValueOnce(new Error("Act failed"));
     const mockLocator = {
@@ -222,11 +220,7 @@ describe("StagehandBrowserHelper", () => {
   });
 
   it("should fallback to direct evaluate click if Playwright locator click fails", async () => {
-    mockPage.evaluate.mockResolvedValueOnce([
-      { tag: "button", type: "", text: "Click Me", placeholder: "", name: "", role: "", xpath: "//button" }
-    ]);
-    await helper.init();
-    await helper.getInteractiveElements();
+    await setupInteractiveElement({ tag: "button", type: "", text: "Click Me", placeholder: "", name: "", role: "", xpath: "//button" });
 
     mockPage.act.mockRejectedValueOnce(new Error("Act failed"));
     const mockLocator = {
@@ -244,11 +238,7 @@ describe("StagehandBrowserHelper", () => {
   });
 
   it("should type element successfully using Stagehand act", async () => {
-    mockPage.evaluate.mockResolvedValueOnce([
-      { tag: "input", type: "text", text: "", placeholder: "Enter name", name: "", role: "", xpath: "//input" }
-    ]);
-    await helper.init();
-    await helper.getInteractiveElements();
+    await setupInteractiveElement({ tag: "input", type: "text", text: "", placeholder: "Enter name", name: "", role: "", xpath: "//input" });
 
     mockPage.act.mockResolvedValueOnce(undefined);
     const success = await helper.typeElement("input_0", "John Doe");
@@ -258,11 +248,7 @@ describe("StagehandBrowserHelper", () => {
   });
 
   it("should fallback to Playwright fill if Stagehand type fails", async () => {
-    mockPage.evaluate.mockResolvedValueOnce([
-      { tag: "input", type: "text", text: "", placeholder: "Enter name", name: "", role: "", xpath: "//input" }
-    ]);
-    await helper.init();
-    await helper.getInteractiveElements();
+    await setupInteractiveElement({ tag: "input", type: "text", text: "", placeholder: "Enter name", name: "", role: "", xpath: "//input" });
 
     mockPage.act.mockRejectedValueOnce(new Error("Act failed"));
     const mockLocator = {
