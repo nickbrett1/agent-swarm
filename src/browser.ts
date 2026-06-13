@@ -7,9 +7,15 @@ const endpointURLString = playwrightModule.endpointURLString;
 
 // Intercept playwright's chromium.connectOverCDP to ensure that when it connects to a remote browser,
 // it always creates a browser context if none exists.
-const chromium = (playwrightModule as any)?.chromium || (playwrightModule as any)?.default?.chromium;
-const originalConnectOverCDP = chromium?.connectOverCDP;
-if (originalConnectOverCDP) {
+let chromium: any = undefined;
+try {
+  chromium = (playwrightModule as any).chromium || (playwrightModule as any).default?.chromium;
+} catch (e) {
+  // Ignored in tests where @cloudflare/playwright is mocked without chromium
+}
+
+if (chromium && chromium.connectOverCDP) {
+  const originalConnectOverCDP = chromium.connectOverCDP;
   const patchedConnectOverCDP = async (endpointURLOrOptions: any, options?: any) => {
     console.log("Patched connectOverCDP invoked");
     const browser = await originalConnectOverCDP.call(chromium, endpointURLOrOptions, options);
@@ -23,9 +29,13 @@ if (originalConnectOverCDP) {
   };
 
   chromium.connectOverCDP = patchedConnectOverCDP;
-  const playwrightDefault = (playwrightModule as any)?.default;
-  if (playwrightDefault && playwrightDefault.chromium) {
-    playwrightDefault.chromium.connectOverCDP = patchedConnectOverCDP;
+  try {
+    const playwrightDefault = (playwrightModule as any).default;
+    if (playwrightDefault && playwrightDefault.chromium) {
+      playwrightDefault.chromium.connectOverCDP = patchedConnectOverCDP;
+    }
+  } catch (e) {
+    // Ignored
   }
 }
 
