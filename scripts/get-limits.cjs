@@ -78,14 +78,19 @@ function printLimits(data) {
       
       const usedTime = browser.usedBrowserTimeSeconds;
       const limitTime = browser.browserTimeSecondsLimit;
+      const includedTime = browser.browserTimeSecondsIncluded ?? ((browser.maxConcurrentSessions || 1) >= 10 ? 36000 : 600);
       const limitText = typeof limitTime === 'number' ? formatTime(limitTime) : limitTime;
+      
       console.log(`   Used Browser Time:          ${formatTime(usedTime)}`);
-      console.log(`   Daily Browser Time Limit:   ${limitText}`);
+      console.log(`   Included Time (No Charge):  ${formatTime(includedTime)}`);
+      console.log(`   Hard Blocking Limit:        ${limitText}`);
       
       if (typeof limitTime === 'number' && usedTime >= limitTime) {
         console.log(`   🚨 Daily limit exceeded:    YES`);
+      } else if (usedTime >= includedTime) {
+        console.log(`   🚨 Included time exceeded:  YES (billed at $0.09/hr overage)`);
       } else {
-        console.log(`   🚨 Daily limit exceeded:    NO`);
+        console.log(`   🚨 Limit exceeded:          NO`);
       }
       
       if (browser.timeUntilBrowserTimeReset !== undefined) {

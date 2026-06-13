@@ -644,7 +644,8 @@ export default {
               Number(env.BROWSER_TIME_LIMIT_MOCK) : 
               ((limits as any).browserTimeSecondsLimit !== undefined ? 
                 (limits as any).browserTimeSecondsLimit : 
-                ((limits.maxConcurrentSessions || 1) >= 10 ? "unlimited" : 600))
+                ((limits.maxConcurrentSessions || 1) >= 10 ? "unlimited" : 600)),
+            browserTimeSecondsIncluded: (limits.maxConcurrentSessions || 1) >= 10 ? 36000 : 600
           };
 
           if (
