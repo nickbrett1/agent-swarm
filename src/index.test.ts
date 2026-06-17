@@ -146,7 +146,7 @@ describe('ShopperAgent runShopping Integration Test', () => {
     vi.spyOn(StagehandBrowserHelper.prototype, 'goto').mockResolvedValue(undefined);
     vi.spyOn(StagehandBrowserHelper.prototype, 'getPageUrl').mockResolvedValue('https://example.com/shop');
     vi.spyOn(StagehandBrowserHelper.prototype, 'getInteractiveElements').mockResolvedValue({
-      elements: [{ id: 'btn', text: 'Buy' }],
+      elements: [{ id: 'btn1', text: 'Buy', tag: 'BUTTON', xpath: '//button' }],
       textSummary: 'summary'
     });
     vi.spyOn(StagehandBrowserHelper.prototype, 'clickElement').mockResolvedValue(true);
