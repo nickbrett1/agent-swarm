@@ -75,6 +75,90 @@ describe("StagehandBrowserHelper", () => {
     helper = new StagehandBrowserHelper(mockBrowserBinding, {}, "test-gemini-key");
   });
 
+  describe("clearStaleSessions", () => {
+    it("should return 0 if browserBinding.fetch is not a function", async () => {
+      const helperWithoutFetch = new StagehandBrowserHelper({} as any, {}, "test-key");
+      const result = await (helperWithoutFetch as any).clearStaleSessions();
+      expect(result).toBe(0);
+    });
+
+    it("should return 0 if there are no active sessions", async () => {
+      (puppeteer.sessions as any).mockResolvedValueOnce([]);
+      const result = await (helper as any).clearStaleSessions();
+      expect(result).toBe(0);
+    });
+
+    it("should delete stale sessions and return count", async () => {
+      (puppeteer.sessions as any).mockResolvedValueOnce([
+        { sessionId: "sess-1" },
+        { id: "sess-2" },
+      ]);
+      const mockFetchText = vi.fn().mockResolvedValue("OK");
+      mockBrowserBinding.fetch.mockResolvedValue({
+        status: 200,
+        text: mockFetchText,
+      });
+
+      const result = await (helper as any).clearStaleSessions();
+
+      expect(result).toBe(2);
+      expect(mockBrowserBinding.fetch).toHaveBeenCalledWith(
+        "https://fake.host/v1/devtools/browser/sess-1",
+        { method: "DELETE" }
+      );
+      expect(mockBrowserBinding.fetch).toHaveBeenCalledWith(
+        "https://fake.host/v1/devtools/browser/sess-2",
+        { method: "DELETE" }
+      );
+    });
+
+    it("should handle session missing sessionId or id", async () => {
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+      (puppeteer.sessions as any).mockResolvedValueOnce([
+        { someOtherField: "value" },
+      ]);
+
+      const result = await (helper as any).clearStaleSessions();
+
+      expect(result).toBe(0);
+      expect(warnSpy).toHaveBeenCalledWith(
+        "Stale session has no sessionId or id:",
+        JSON.stringify({ someOtherField: "value" })
+      );
+
+      warnSpy.mockRestore();
+    });
+
+    it("should return 0 and log error if clearing sessions throws", async () => {
+      const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      const error = new Error("Puppeteer sessions failed");
+      (puppeteer.sessions as any).mockRejectedValueOnce(error);
+
+      const result = await (helper as any).clearStaleSessions();
+
+      expect(result).toBe(0);
+      expect(errSpy).toHaveBeenCalledWith("Failed to clear stale sessions:", error);
+
+      errSpy.mockRestore();
+    });
+
+    it("should handle error when fetching limits", async () => {
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+      (puppeteer.limits as any).mockRejectedValueOnce(new Error("Limits failed"));
+      (puppeteer.sessions as any).mockResolvedValueOnce([]);
+
+      const result = await (helper as any).clearStaleSessions();
+
+      expect(result).toBe(0);
+      expect(warnSpy).toHaveBeenCalledWith(
+        "clearStaleSessions: Failed to fetch limits:",
+        "Limits failed"
+      );
+
+      warnSpy.mockRestore();
+    });
+  });
+
   it("should initialize Stagehand successfully", async () => {
     await helper.init();
 
