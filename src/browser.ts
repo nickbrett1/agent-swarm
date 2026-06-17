@@ -6,6 +6,55 @@ import { AgentLLMClient } from "./agentLLMClient.js";
 
 const endpointURLString = playwrightModule.endpointURLString;
 
+function getFetchUrlString(request: any): string {
+  if (typeof request === "string") {
+    return request;
+  } else if (request && typeof request === "object") {
+    if (typeof request.toString === "function") {
+      return request.toString();
+    } else {
+      return request.url || "";
+    }
+  }
+  return "";
+}
+
+function getFetchMethod(request: any, init?: any): string {
+  if (init && init.method) {
+    return init.method;
+  } else if (request && typeof request === "object" && "method" in request) {
+    return request.method || "GET";
+  }
+  return "GET";
+}
+
+function stripFetchQueryParameters(request: any, urlStr: string, method: string): { newRequest: any, newUrlStr: string } {
+  let newRequest = request;
+  let newUrlStr = urlStr;
+
+  if (urlStr.includes("/v1/devtools/browser/") && method.toUpperCase() !== "DELETE") {
+    try {
+      const urlObj = new URL(urlStr);
+      if (urlObj.search !== "") {
+        console.log(`[MYBROWSER.fetch] Stripping query parameters from upgrade request: ${urlObj.search}`);
+        urlObj.search = "";
+        if (typeof request === "string") {
+          newRequest = urlObj.toString();
+        } else if (request instanceof URL) {
+          newRequest = urlObj;
+        } else {
+          newRequest = urlObj;
+        }
+        newUrlStr = urlObj.toString();
+      }
+    } catch (e) {
+      console.error("[MYBROWSER.fetch] Failed to strip query parameters:", e);
+    }
+  }
+
+  return { newRequest, newUrlStr };
+}
+
 // Intercept playwright's chromium.connectOverCDP to ensure that when it connects to a remote browser,
 // it always creates a browser context if none exists.
 let lastCDPError: Error | null = null;
@@ -140,43 +189,12 @@ export class StagehandBrowserHelper {
           console.log("Attempting to patch browser.fetch directly...");
           const patchedFetch = Object.assign(
             async function(request: any, init?: any) {
-              let urlStr = "";
-              if (typeof request === "string") {
-                urlStr = request;
-              } else if (request && typeof request === "object") {
-                if (typeof request.toString === "function") {
-                  urlStr = request.toString();
-                } else {
-                  urlStr = request.url || "";
-                }
-              }
-              let method = "GET";
-              if (init && init.method) {
-                method = init.method;
-              } else if (request && typeof request === "object" && "method" in request) {
-                method = request.method || "GET";
-              }
+              let urlStr = getFetchUrlString(request);
+              const method = getFetchMethod(request, init);
 
-              // Strip query parameters for v1/devtools/browser/ upgrade requests as the API returns a 400 validation error
-              if (urlStr.includes("/v1/devtools/browser/") && method.toUpperCase() !== "DELETE") {
-                try {
-                  const urlObj = new URL(urlStr);
-                  if (urlObj.search !== "") {
-                    console.log(`[MYBROWSER.fetch] Stripping query parameters from upgrade request: ${urlObj.search}`);
-                    urlObj.search = "";
-                    if (typeof request === "string") {
-                      request = urlObj.toString();
-                    } else if (request instanceof URL) {
-                      request = urlObj;
-                    } else {
-                      request = urlObj;
-                    }
-                    urlStr = urlObj.toString();
-                  }
-                } catch (e) {
-                  console.error("[MYBROWSER.fetch] Failed to strip query parameters:", e);
-                }
-              }
+              const stripped = stripFetchQueryParameters(request, urlStr, method);
+              request = stripped.newRequest;
+              urlStr = stripped.newUrlStr;
 
               console.log(`[MYBROWSER.fetch] request: ${urlStr} [${method}]`);
               try {
