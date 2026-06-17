@@ -686,37 +686,28 @@ export class StagehandBrowserHelper {
       const frames = page.frames();
       for (const frame of frames) {
         try {
-          for (const sel of STRIPE_CARD_SELECTORS) {
-            const loc = frame.locator(sel);
-            if (await loc.count() > 0) {
-              await loc.fill(card);
-              cardFilled = true;
-              break;
-            }
+          const cardLoc = frame.locator(STRIPE_CARD_SELECTORS.join(','));
+          if (await cardLoc.count() > 0) {
+            await cardLoc.first().fill(card);
+            cardFilled = true;
           }
-          for (const sel of STRIPE_EXPIRY_SELECTORS) {
-            const loc = frame.locator(sel);
-            if (await loc.count() > 0) {
-              await loc.fill(expiry);
-              expiryFilled = true;
-              break;
-            }
+
+          const expiryLoc = frame.locator(STRIPE_EXPIRY_SELECTORS.join(','));
+          if (await expiryLoc.count() > 0) {
+            await expiryLoc.first().fill(expiry);
+            expiryFilled = true;
           }
-          for (const sel of STRIPE_CVC_SELECTORS) {
-            const loc = frame.locator(sel);
-            if (await loc.count() > 0) {
-              await loc.fill(cvc);
-              cvcFilled = true;
-              break;
-            }
+
+          const cvcLoc = frame.locator(STRIPE_CVC_SELECTORS.join(','));
+          if (await cvcLoc.count() > 0) {
+            await cvcLoc.first().fill(cvc);
+            cvcFilled = true;
           }
-          for (const sel of STRIPE_NAME_SELECTORS) {
-            const loc = frame.locator(sel);
-            if (await loc.count() > 0) {
-              await loc.fill(name);
-              nameFilled = true;
-              break;
-            }
+
+          const nameLoc = frame.locator(STRIPE_NAME_SELECTORS.join(','));
+          if (await nameLoc.count() > 0) {
+            await nameLoc.first().fill(name);
+            nameFilled = true;
           }
         } catch (e) {
           // Ignore frame specific errors
