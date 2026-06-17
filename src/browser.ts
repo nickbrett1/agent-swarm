@@ -1,5 +1,6 @@
 import { Stagehand } from "@browserbasehq/stagehand";
 import * as playwrightModule from "@cloudflare/playwright";
+import type { BrowserType } from "@cloudflare/playwright";
 import puppeteer from "@cloudflare/puppeteer";
 import { env as workersEnv } from "cloudflare:workers";
 import { AgentLLMClient } from "./agentLLMClient.js";
@@ -9,19 +10,20 @@ const endpointURLString = playwrightModule.endpointURLString;
 // Intercept playwright's chromium.connectOverCDP to ensure that when it connects to a remote browser,
 // it always creates a browser context if none exists.
 let lastCDPError: Error | null = null;
-let chromium: any = undefined;
+let chromium: BrowserType | undefined = undefined;
 try {
-  chromium = (playwrightModule as any).chromium || (playwrightModule as any).default?.chromium;
+  const mod = playwrightModule as { chromium?: BrowserType, default?: { chromium?: BrowserType } };
+  chromium = mod.chromium || mod.default?.chromium;
 } catch (e) {
   // Ignored in tests where @cloudflare/playwright is mocked without chromium
 }
 
 if (chromium && chromium.connectOverCDP) {
   const originalConnectOverCDP = chromium.connectOverCDP;
-  const patchedConnectOverCDP = async (endpointURLOrOptions: any, options?: any) => {
+  const patchedConnectOverCDP = async (...args: any[]) => {
     console.log("Patched connectOverCDP invoked");
     try {
-      const browser = await originalConnectOverCDP.call(chromium, endpointURLOrOptions, options);
+      const browser = await originalConnectOverCDP.apply(chromium, args as any);
       // Remote/custom CDP connections in Cloudflare Workers do not initialize a default context.
       // We must ensure there is at least one context so that Stagehand doesn't encounter an undefined context.
       if (browser.contexts().length === 0) {
@@ -35,11 +37,12 @@ if (chromium && chromium.connectOverCDP) {
     }
   };
 
-  chromium.connectOverCDP = patchedConnectOverCDP;
+  chromium.connectOverCDP = patchedConnectOverCDP as typeof chromium.connectOverCDP;
   try {
-    const playwrightDefault = (playwrightModule as any).default;
+    const mod = playwrightModule as { default?: { chromium?: BrowserType } };
+    const playwrightDefault = mod.default;
     if (playwrightDefault && playwrightDefault.chromium) {
-      playwrightDefault.chromium.connectOverCDP = patchedConnectOverCDP;
+      playwrightDefault.chromium.connectOverCDP = patchedConnectOverCDP as typeof chromium.connectOverCDP;
     }
   } catch (e) {
     // Ignored
