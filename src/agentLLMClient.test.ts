@@ -142,7 +142,8 @@ describe('AgentLLMClient', () => {
           { role: 'user', content: { foo: 'bar' } as any },
           { role: 'assistant', content: null as any }
         ]
-      }
+      },
+      logger: vi.fn()
     });
 
     expect(mockFetch).toHaveBeenCalledWith(
@@ -172,7 +173,8 @@ describe('AgentLLMClient', () => {
           { role: 'system', content: { complex: 'system logic' } as any },
           { role: 'user', content: undefined as any }
         ]
-      }
+      },
+      logger: vi.fn()
     });
 
     expect(mockFetch).toHaveBeenCalledWith(
@@ -237,7 +239,8 @@ describe('AgentLLMClient', () => {
           { role: 'user', content: 'user message' },
           { role: 'assistant', content: { complex: 'object' } as any }
         ]
-      }
+      },
+      logger: vi.fn()
     });
 
     expect(mockFetch).toHaveBeenCalledWith(
@@ -317,7 +320,8 @@ describe('AgentLLMClient', () => {
           { role: 'user', content: 'user message' },
           { role: 'assistant', content: { complex: 'object' } as any }
         ]
-      }
+      },
+      logger: vi.fn()
     });
 
     expect(result).toEqual({ data: 'workers ai response' });
