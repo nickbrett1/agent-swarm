@@ -66,4 +66,5 @@ jobs:
           echo "All checks passed. Merging..."
           gh pr merge "$PR_URL" --merge
         env:
-          GH_TOKEN: ${{secrets.MYTOKEN || secrets.GITHUB_TOKEN}}
+          PR_URL: ${{github.event.pull_request.html_url}}
+          GH_TOKEN: ${{secrets.MYTOKEN}}
