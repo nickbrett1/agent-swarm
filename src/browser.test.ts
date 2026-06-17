@@ -318,4 +318,12 @@ describe("StagehandBrowserHelper", () => {
       puppeteer.limits = originalLimits;
     }
   });
+
+  it("should wait for the specified time", async () => {
+    vi.useFakeTimers();
+    const waitPromise = helper.wait(1000);
+    vi.advanceTimersByTime(1000);
+    await expect(waitPromise).resolves.toBeUndefined();
+    vi.useRealTimers();
+  });
 });
