@@ -60,7 +60,7 @@ vi.mock('agents', () => ({
     }
   },
   routeAgentRequest: vi.fn(),
-  callable: () => () => {},
+  callable: () => (_target: any, _context: any) => {},
 }));
 
 describe('ShopperAgent isSafeUrl Logic', () => {
