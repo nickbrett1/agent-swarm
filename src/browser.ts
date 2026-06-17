@@ -433,9 +433,8 @@ export class StagehandBrowserHelper {
             return true;
           }
 
-          // @ts-ignore
           function isDisabled(el: HTMLElement): boolean {
-            if ((el as HTMLButtonElement | HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement).disabled) return true;
+            if ('disabled' in el && (el as any).disabled) return true;
             if (el.getAttribute("aria-disabled") === "true") return true;
             if (el.classList.contains("disabled")) return true;
             return false;
