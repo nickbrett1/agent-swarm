@@ -285,9 +285,11 @@ describe("StagehandBrowserHelper", () => {
     await helper.init();
     mockPage.act.mockRejectedValueOnce(new Error("Act failed"));
 
+    const firstMock = { fill: vi.fn().mockResolvedValue(undefined) };
     const mockFrame = {
       locator: vi.fn().mockReturnValue({
         count: vi.fn().mockResolvedValue(1),
+        first: vi.fn().mockReturnValue(firstMock),
         fill: vi.fn().mockResolvedValue(undefined),
       }),
     };
