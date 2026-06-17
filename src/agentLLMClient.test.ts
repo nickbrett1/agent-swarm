@@ -91,4 +91,248 @@ describe('AgentLLMClient', () => {
 
     await expect(client.createChatCompletion(mockOptions as any)).rejects.toThrow('Empty response from Gemini API');
   });
+
+  it('should return successfully from Gemini API', async () => {
+    (globalThis.fetch as any).mockResolvedValueOnce({
+      ok: true,
+      json: vi.fn().mockResolvedValueOnce({
+        candidates: [
+          {
+            content: {
+              parts: [{ text: 'gemini api response' }]
+            }
+          }
+        ]
+      })
+    });
+
+    const mockLogger = vi.fn();
+
+    const client = new AgentLLMClient({
+      apiKey: 'test-api-key',
+      logger: mockLogger
+    });
+
+    const result = await client.createChatCompletion(mockOptions as any);
+
+    expect(result).toEqual({ data: 'gemini api response' });
+    expect(mockLogger).toHaveBeenCalledWith({
+      category: 'gemini',
+      message: 'Gemini finished thinking!'
+    });
+  });
+
+  it('should format string system messages correctly for Gemini API', async () => {
+    const mockFetch = vi.fn().mockResolvedValueOnce({
+      ok: true,
+      json: vi.fn().mockResolvedValueOnce({
+        candidates: [{ content: { parts: [{ text: 'response' }] } }]
+      })
+    });
+    globalThis.fetch = mockFetch as any;
+
+    const client = new AgentLLMClient({
+      apiKey: 'test-api-key'
+    });
+
+    await client.createChatCompletion({
+      options: {
+        messages: [
+          { role: 'system', content: 'string system message' },
+          { role: 'user', content: { foo: 'bar' } as any },
+          { role: 'assistant', content: null as any }
+        ]
+      }
+    });
+
+    expect(mockFetch).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        body: expect.stringContaining('"systemInstruction":{"parts":[{"text":"string system message"}]}')
+      })
+    );
+  });
+
+  it('should handle non-string system messages correctly for Gemini API', async () => {
+    const mockFetch = vi.fn().mockResolvedValueOnce({
+      ok: true,
+      json: vi.fn().mockResolvedValueOnce({
+        candidates: [{ content: { parts: [{ text: 'response' }] } }]
+      })
+    });
+    globalThis.fetch = mockFetch as any;
+
+    const client = new AgentLLMClient({
+      apiKey: 'test-api-key'
+    });
+
+    await client.createChatCompletion({
+      options: {
+        messages: [
+          { role: 'system', content: { complex: 'system logic' } as any },
+          { role: 'user', content: undefined as any }
+        ]
+      }
+    });
+
+    expect(mockFetch).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        body: expect.stringContaining('"systemInstruction":{"parts":[{"text":"{\\"complex\\":\\"system logic\\"}"}]}')
+      })
+    );
+    expect(mockFetch).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        body: expect.stringContaining('"parts":[{"text":""}]')
+      })
+    );
+  });
+
+  it('should handle non-Error objects thrown by Gemini fetch', async () => {
+    (globalThis.fetch as any).mockRejectedValueOnce('string error');
+
+    const mockRun = vi.fn().mockResolvedValueOnce({ response: 'fallback' });
+    const mockBinding = { run: mockRun } as unknown as Ai;
+    const mockLogger = vi.fn();
+
+    const client = new AgentLLMClient({
+      apiKey: 'test-api-key',
+      binding: mockBinding,
+      logger: mockLogger
+    });
+
+    await client.createChatCompletion(mockOptions as any);
+
+    expect(mockLogger).toHaveBeenCalledWith(
+      expect.objectContaining({
+        category: 'gemini',
+        message: expect.stringContaining('string error')
+      })
+    );
+  });
+
+  it('should format messages correctly for Gemini API including system message, schema, and non-string content', async () => {
+    const mockFetch = vi.fn().mockResolvedValueOnce({
+      ok: true,
+      json: vi.fn().mockResolvedValueOnce({
+        candidates: [{ content: { parts: [{ text: 'response' }] } }]
+      })
+    });
+    globalThis.fetch = mockFetch as any;
+
+    const client = new AgentLLMClient({
+      apiKey: 'test-api-key'
+    });
+
+    const z = await import('zod').then(m => m.z);
+    await client.createChatCompletion({
+      options: {
+        response_model: {
+          name: 'test_model',
+          schema: z.object({ test: z.string() }) as any
+        },
+        messages: [
+          { role: 'system', content: 'system message' },
+          { role: 'user', content: 'user message' },
+          { role: 'assistant', content: { complex: 'object' } as any }
+        ]
+      }
+    });
+
+    expect(mockFetch).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        body: expect.stringContaining('"systemInstruction":{"parts":[{"text":"system message"}]}')
+      })
+    );
+    expect(mockFetch).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        body: expect.stringContaining('"role":"user","parts":[{"text":"user message"}]')
+      })
+    );
+    expect(mockFetch).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        body: expect.stringContaining('"role":"model","parts":[{"text":"{\\"complex\\":\\"object\\"}"}]')
+      })
+    );
+    expect(mockFetch).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        body: expect.stringContaining('"responseMimeType":"application/json"')
+      })
+    );
+  });
+
+  it('should throw error if neither API key nor binding is available', async () => {
+    const client = new AgentLLMClient({});
+
+    await expect(client.createChatCompletion(mockOptions as any)).rejects.toThrow('No API key or Workers AI binding available for LLMClient');
+  });
+
+  it('should use Workers AI directly if no API key is available but binding is present', async () => {
+    const mockRun = vi.fn().mockResolvedValueOnce({ response: 'workers ai direct response' });
+    const mockBinding = { run: mockRun } as unknown as Ai;
+    const mockLogger = vi.fn();
+
+    const client = new AgentLLMClient({
+      binding: mockBinding,
+      logger: mockLogger
+    });
+
+    const result = await client.createChatCompletion(mockOptions as any);
+
+    expect(result).toEqual({ data: 'workers ai direct response' });
+    expect(mockLogger).toHaveBeenCalledWith({
+      category: 'workersai',
+      message: 'Thinking using Workers AI Llama...'
+    });
+    expect(mockLogger).toHaveBeenCalledWith({
+      category: 'workersai',
+      message: 'Workers AI finished thinking!'
+    });
+    expect(mockRun).toHaveBeenCalled();
+  });
+
+  it('should format messages correctly for Workers AI including schema and non-string content', async () => {
+    const mockRun = vi.fn().mockResolvedValueOnce({ response: 'workers ai response' });
+    const mockBinding = { run: mockRun } as unknown as Ai;
+    const mockLogger = vi.fn();
+
+    const client = new AgentLLMClient({
+      binding: mockBinding,
+      logger: mockLogger
+    });
+
+    const z = await import('zod').then(m => m.z);
+    const result = await client.createChatCompletion({
+      options: {
+        response_model: {
+          name: 'test_model',
+          schema: z.object({ test: z.string() }) as any
+        },
+        messages: [
+          { role: 'user', content: 'user message' },
+          { role: 'assistant', content: { complex: 'object' } as any }
+        ]
+      }
+    });
+
+    expect(result).toEqual({ data: 'workers ai response' });
+    expect(mockRun).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        messages: [
+          { role: 'user', content: 'user message' },
+          { role: 'assistant', content: '{"complex":"object"}' }
+        ],
+        response_format: expect.objectContaining({
+          type: 'json_schema'
+        }),
+        temperature: 0
+      })
+    );
+  });
 });
