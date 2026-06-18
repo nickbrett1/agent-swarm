@@ -411,6 +411,31 @@ export class StagehandBrowserHelper {
     while (attempts < maxAttempts) {
       try {
         elementsData = await page.evaluate(() => {
+          function getSiblingInfo(node: Node) {
+            let index = 0;
+            let hasSiblingWithSameTag = false;
+
+            let prevSibling = node.previousSibling;
+            while (prevSibling) {
+              if (prevSibling.nodeType !== Node.DOCUMENT_TYPE_NODE && prevSibling.nodeName === node.nodeName) {
+                index++;
+                hasSiblingWithSameTag = true;
+              }
+              prevSibling = prevSibling.previousSibling;
+            }
+
+            let nextSibling = node.nextSibling;
+            while (nextSibling) {
+              if (nextSibling.nodeName === node.nodeName) {
+                hasSiblingWithSameTag = true;
+                break;
+              }
+              nextSibling = nextSibling.nextSibling;
+            }
+
+            return { index, hasSiblingWithSameTag };
+          }
+
           function getXPath(element: Element): string {
             if (element.id) {
               return `//*[@id="${element.id}"]`;
@@ -418,27 +443,8 @@ export class StagehandBrowserHelper {
             const paths: string[] = [];
             let current: Node | null = element;
             while (current && current.nodeType === Node.ELEMENT_NODE) {
-              let index = 0;
-              let hasSiblingWithSameTag = false;
-              
-              let prevSibling = current.previousSibling;
-              while (prevSibling) {
-                if (prevSibling.nodeType !== Node.DOCUMENT_TYPE_NODE && prevSibling.nodeName === current.nodeName) {
-                  index++;
-                  hasSiblingWithSameTag = true;
-                }
-                prevSibling = prevSibling.previousSibling;
-              }
-              
-              let nextSibling = current.nextSibling;
-              while (nextSibling) {
-                if (nextSibling.nodeName === current.nodeName) {
-                  hasSiblingWithSameTag = true;
-                  break;
-                }
-                nextSibling = nextSibling.nextSibling;
-              }
-              
+              const { index, hasSiblingWithSameTag } = getSiblingInfo(current);
+
               const tagName = current.nodeName.toLowerCase();
               const pathIndex = hasSiblingWithSameTag ? `[${index + 1}]` : "";
               paths.unshift(tagName + pathIndex);

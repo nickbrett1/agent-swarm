@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { AgentLLMClient } from './agentLLMClient.js';
 import type { Ai } from "@cloudflare/workers-types";
+import { z } from "zod";
 
 describe('AgentLLMClient', () => {
   beforeEach(() => {

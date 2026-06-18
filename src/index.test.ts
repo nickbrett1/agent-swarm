@@ -1,3 +1,4 @@
+import { StagehandBrowserHelper } from "./browser.js";
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 vi.mock("cloudflare:workers", () => ({
@@ -59,7 +60,7 @@ vi.mock('agents', () => ({
     }
   },
   routeAgentRequest: vi.fn(),
-  callable: () => () => {},
+  callable: () => (_target: any, _context: any) => {},
 }));
 
 describe('ShopperAgent isSafeUrl Logic', () => {
@@ -119,6 +120,45 @@ describe('ShopperAgent isSafeUrl Logic', () => {
     const agent = new (ShopperAgent as any)(null, env);
     const isSafe = await agent.isSafeUrl('https://1.1.1.1/shop');
     expect(isSafe).toBe(true);
+  });
+});
+
+describe('ShopperAgent runShopping Integration Test', () => {
+  let agent: any;
+  let env: any;
+
+  beforeEach(() => {
+    env = {
+      SHOP_URL: 'https://example.com/shop',
+      MYBROWSER: {},
+      AI: {},
+    };
+    agent = new (ShopperAgent as any)(null, env);
+    vi.spyOn(agent, 'isSafeUrl').mockResolvedValue(true);
+  });
+
+  it('should run shopping successfully', async () => {
+    vi.spyOn(agent, 'queryLLM')
+      .mockResolvedValueOnce({ explanation: 'click some item', action: 'click', targetId: 'btn1' })
+      .mockResolvedValueOnce({ explanation: 'done', action: 'finish' });
+
+    vi.spyOn(StagehandBrowserHelper.prototype, 'init').mockResolvedValue(undefined);
+    vi.spyOn(StagehandBrowserHelper.prototype, 'goto').mockResolvedValue(undefined);
+    vi.spyOn(StagehandBrowserHelper.prototype, 'getPageUrl').mockResolvedValue('https://example.com/shop');
+    vi.spyOn(StagehandBrowserHelper.prototype, 'getInteractiveElements').mockResolvedValue({
+      elements: [{ id: 'btn1', text: 'Buy', tag: 'BUTTON', xpath: '//button' }],
+      textSummary: 'summary'
+    });
+    vi.spyOn(StagehandBrowserHelper.prototype, 'clickElement').mockResolvedValue(true);
+
+    // Crucial: mock wait to simulate immediate resolution instead of a real timeout
+    // We cannot use vi.useFakeTimers() here because it clashes with other async loops.
+    vi.spyOn(StagehandBrowserHelper.prototype, 'wait').mockResolvedValue(undefined);
+    vi.spyOn(StagehandBrowserHelper.prototype, 'close').mockResolvedValue(undefined);
+
+    const result = await agent.runShopping('persona');
+    expect(result).toContain('Shopping Session Finished. Status: completed.');
+    expect(result).toContain('done');
   });
 });
 

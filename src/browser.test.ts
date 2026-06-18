@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 vi.mock("cloudflare:workers", () => ({
   env: {
@@ -73,6 +73,90 @@ describe("StagehandBrowserHelper", () => {
     mockStagehand.close.mockReset();
 
     helper = new StagehandBrowserHelper(mockBrowserBinding, {}, "test-gemini-key");
+  });
+
+  describe("clearStaleSessions", () => {
+    it("should return 0 if browserBinding.fetch is not a function", async () => {
+      const helperWithoutFetch = new StagehandBrowserHelper({} as any, {}, "test-key");
+      const result = await (helperWithoutFetch as any).clearStaleSessions();
+      expect(result).toBe(0);
+    });
+
+    it("should return 0 if there are no active sessions", async () => {
+      (puppeteer.sessions as any).mockResolvedValueOnce([]);
+      const result = await (helper as any).clearStaleSessions();
+      expect(result).toBe(0);
+    });
+
+    it("should delete stale sessions and return count", async () => {
+      (puppeteer.sessions as any).mockResolvedValueOnce([
+        { sessionId: "sess-1" },
+        { id: "sess-2" },
+      ]);
+      const mockFetchText = vi.fn().mockResolvedValue("OK");
+      mockBrowserBinding.fetch.mockResolvedValue({
+        status: 200,
+        text: mockFetchText,
+      });
+
+      const result = await (helper as any).clearStaleSessions();
+
+      expect(result).toBe(2);
+      expect(mockBrowserBinding.fetch).toHaveBeenCalledWith(
+        "https://fake.host/v1/devtools/browser/sess-1",
+        { method: "DELETE" }
+      );
+      expect(mockBrowserBinding.fetch).toHaveBeenCalledWith(
+        "https://fake.host/v1/devtools/browser/sess-2",
+        { method: "DELETE" }
+      );
+    });
+
+    it("should handle session missing sessionId or id", async () => {
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+      (puppeteer.sessions as any).mockResolvedValueOnce([
+        { someOtherField: "value" },
+      ]);
+
+      const result = await (helper as any).clearStaleSessions();
+
+      expect(result).toBe(0);
+      expect(warnSpy).toHaveBeenCalledWith(
+        "Stale session has no sessionId or id:",
+        JSON.stringify({ someOtherField: "value" })
+      );
+
+      warnSpy.mockRestore();
+    });
+
+    it("should return 0 and log error if clearing sessions throws", async () => {
+      const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      const error = new Error("Puppeteer sessions failed");
+      (puppeteer.sessions as any).mockRejectedValueOnce(error);
+
+      const result = await (helper as any).clearStaleSessions();
+
+      expect(result).toBe(0);
+      expect(errSpy).toHaveBeenCalledWith("Failed to clear stale sessions:", error);
+
+      errSpy.mockRestore();
+    });
+
+    it("should handle error when fetching limits", async () => {
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+      (puppeteer.limits as any).mockRejectedValueOnce(new Error("Limits failed"));
+      (puppeteer.sessions as any).mockResolvedValueOnce([]);
+
+      const result = await (helper as any).clearStaleSessions();
+
+      expect(result).toBe(0);
+      expect(warnSpy).toHaveBeenCalledWith(
+        "clearStaleSessions: Failed to fetch limits:",
+        "Limits failed"
+      );
+
+      warnSpy.mockRestore();
+    });
   });
 
   it("should initialize Stagehand successfully", async () => {
@@ -327,5 +411,92 @@ describe("StagehandBrowserHelper", () => {
     vi.advanceTimersByTime(1000);
     await expect(waitPromise).resolves.toBeUndefined();
     vi.useRealTimers();
+  });
+
+  describe("clearStaleSessions", () => {
+    let warnSpy: any;
+    let errorSpy: any;
+
+    beforeEach(() => {
+      warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+      errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    });
+
+    afterEach(() => {
+      warnSpy.mockRestore();
+      errorSpy.mockRestore();
+    });
+
+    it("should return 0 when browserBinding is missing", async () => {
+      const helperNoBinding = new StagehandBrowserHelper(undefined, {}, "test-key");
+      const result = await (helperNoBinding as any).clearStaleSessions();
+      expect(result).toBe(0);
+    });
+
+    it("should return 0 when browserBinding.fetch is not a function", async () => {
+      const helperInvalidBinding = new StagehandBrowserHelper({ fetch: "not-a-function" }, {}, "test-key");
+      const result = await (helperInvalidBinding as any).clearStaleSessions();
+      expect(result).toBe(0);
+    });
+
+    it("should return 0 when puppeteer.sessions returns empty or undefined", async () => {
+      (puppeteer.sessions as any).mockResolvedValueOnce([]);
+      const result = await (helper as any).clearStaleSessions();
+      expect(result).toBe(0);
+      expect(puppeteer.limits).toHaveBeenCalledWith(mockBrowserBinding);
+      expect(puppeteer.sessions).toHaveBeenCalledWith(mockBrowserBinding);
+    });
+
+    it("should log warning when puppeteer.limits throws error but continue to query sessions", async () => {
+      (puppeteer.limits as any).mockRejectedValueOnce(new Error("Limits error"));
+      (puppeteer.sessions as any).mockResolvedValueOnce([]);
+      const result = await (helper as any).clearStaleSessions();
+
+      expect(warnSpy).toHaveBeenCalledWith("clearStaleSessions: Failed to fetch limits:", "Limits error");
+      expect(puppeteer.sessions).toHaveBeenCalledWith(mockBrowserBinding);
+      expect(result).toBe(0);
+    });
+
+    it("should map and clear multiple stale sessions via fetch DELETE", async () => {
+      const mockSessions = [
+        { sessionId: "session-1" },
+        { id: "session-2" }
+      ];
+      (puppeteer.sessions as any).mockResolvedValueOnce(mockSessions);
+
+      mockBrowserBinding.fetch.mockResolvedValue({
+        status: 200,
+        text: vi.fn().mockResolvedValue("OK")
+      });
+
+      const result = await (helper as any).clearStaleSessions();
+
+      expect(result).toBe(2);
+      expect(mockBrowserBinding.fetch).toHaveBeenCalledTimes(2);
+      expect(mockBrowserBinding.fetch).toHaveBeenCalledWith("https://fake.host/v1/devtools/browser/session-1", { method: "DELETE" });
+      expect(mockBrowserBinding.fetch).toHaveBeenCalledWith("https://fake.host/v1/devtools/browser/session-2", { method: "DELETE" });
+    });
+
+    it("should warn and return 0 for a session missing sessionId or id", async () => {
+      const mockSessions = [
+        { someOtherKey: "value" }
+      ];
+      (puppeteer.sessions as any).mockResolvedValueOnce(mockSessions);
+
+      const result = await (helper as any).clearStaleSessions();
+
+      expect(result).toBe(0);
+      expect(warnSpy).toHaveBeenCalledWith("Stale session has no sessionId or id:", JSON.stringify(mockSessions[0]));
+      expect(mockBrowserBinding.fetch).not.toHaveBeenCalled();
+    });
+
+    it("should return 0 when puppeteer.sessions throws error", async () => {
+      (puppeteer.sessions as any).mockRejectedValueOnce(new Error("Sessions error"));
+
+      const result = await (helper as any).clearStaleSessions();
+
+      expect(result).toBe(0);
+      expect(errorSpy).toHaveBeenCalledWith("Failed to clear stale sessions:", expect.any(Error));
+    });
   });
 });
