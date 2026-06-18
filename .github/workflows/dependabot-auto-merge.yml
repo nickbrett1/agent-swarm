@@ -17,6 +17,12 @@ jobs:
       - uses: actions/checkout@v6
       - name: Check status and merge
         run: |
+          if [ -n "$MYTOKEN" ]; then
+            export GH_TOKEN="$MYTOKEN"
+          else
+            export GH_TOKEN="$GITHUB_TOKEN"
+          fi
+
           PR_URL=""
           if [ "${{ github.event_name }}" == "pull_request_target" ]; then
             PR_URL="${{ github.event.pull_request.html_url }}"
@@ -67,4 +73,5 @@ jobs:
           gh pr merge "$PR_URL" --merge
         env:
           PR_URL: ${{github.event.pull_request.html_url}}
-          GH_TOKEN: ${{ secrets.MYTOKEN != '' && secrets.MYTOKEN || secrets.GITHUB_TOKEN }}
+          MYTOKEN: ${{secrets.MYTOKEN}}
+          GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
