@@ -363,7 +363,7 @@ async function testLimitsFetch(env: any, mockLimitsSetup?: () => Promise<any>) {
   const workerModule = await import('./index');
   const res = await workerModule.default.fetch(req, env as any);
   expect(res.status).toBe(200);
-  return res.json();
+  return res.json() as any;
 }
 
 describe('Worker Default Export', () => {
