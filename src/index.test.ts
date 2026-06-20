@@ -42,7 +42,7 @@ vi.mock('@browserbasehq/stagehand', () => ({
       }
     };
   }),
-  LLMClient: class {},
+  LLMClient: class { constructor() {} },
 }));
 
 // Mock the agents module so that extending Agent doesn't try to invoke cloudflare native bindings
@@ -349,13 +349,24 @@ describe('verifyHmacSignature', () => {
   });
 });
 
-describe('Worker Default Export', () => {
-  async function setupMockLimits(limitsObj: any) {
-    const puppeteerMock = await import('@cloudflare/puppeteer').then(m => m.default);
-    (puppeteerMock.limits as any).mockResolvedValueOnce(limitsObj);
-    return puppeteerMock;
-  }
+async function setupMockLimits(limitsObj: any) {
+  const puppeteerMock = await import('@cloudflare/puppeteer').then(m => m.default);
+  (puppeteerMock.limits as any).mockResolvedValueOnce(limitsObj);
+  return puppeteerMock;
+}
 
+async function testLimitsFetch(env: any, mockLimitsSetup?: () => Promise<any>) {
+  const req = new Request('https://localhost/limits');
+  if (mockLimitsSetup) {
+    await mockLimitsSetup();
+  }
+  const workerModule = await import('./index');
+  const res = await workerModule.default.fetch(req, env as any);
+  expect(res.status).toBe(200);
+  return res.json();
+}
+
+describe('Worker Default Export', () => {
   it('should return info on /info', async () => {
     const req = new Request('https://localhost/info');
     const env = {};
@@ -388,16 +399,6 @@ describe('Worker Default Export', () => {
     expect(res.status).toBe(204);
     expect(res.headers.get('Access-Control-Allow-Origin')).toBe('https://fintechnick.com');
   });
-
-  async function testLimitsFetch(env: any, mockLimitsSetup?: () => Promise<any>) {
-    const req = new Request('https://localhost/limits');
-    if (mockLimitsSetup) {
-      await mockLimitsSetup();
-    }
-    const res = await workerDefault.fetch(req, env as any);
-    expect(res.status).toBe(200);
-    return res.json() as any;
-  }
 
   it('should return limits on /limits', async () => {
     const data = await testLimitsFetch({

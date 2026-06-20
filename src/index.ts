@@ -135,7 +135,7 @@ export class ShopperAgent extends Agent<Env, ShopperState> {
 
       return true;
     } catch (e) {
-      // If URL parsing fails, it's malformed and potentially unsafe
+      // Ignore URL parsing errors and treat malformed URLs as unsafe
       return false;
     }
   }
@@ -609,6 +609,122 @@ function getCorsOrigin(request: Request): string {
   return ALLOWED_ORIGINS[0];
 }
 
+async function handleLimitsRequest(request: Request, env: Env): Promise<Response> {
+  let browserLimits: any = { configured: false };
+  if (env.MYBROWSER) {
+    try {
+      const limits = await puppeteer.limits(env.MYBROWSER);
+      browserLimits = {
+        ...(limits as any),
+        configured: true,
+        maxConcurrentSessions: limits.maxConcurrentSessions,
+        activeSessionsCount: limits.activeSessions ? limits.activeSessions.length : 0,
+        allowedBrowserAcquisitions: limits.allowedBrowserAcquisitions,
+        timeUntilNextAcquisition: limits.timeUntilNextAllowedBrowserAcquisition,
+        usedBrowserTimeSeconds: (limits as any).usedBrowserTimeSeconds || 0,
+        timeUntilBrowserTimeReset: (limits as any).timeUntilBrowserTimeReset,
+        browserTimeSecondsIncluded: (limits.maxConcurrentSessions || 1) >= 10 ? 36000 : 600
+      };
+
+      if (env.BROWSER_TIME_LIMIT_MOCK !== undefined) {
+        browserLimits.browserTimeSecondsLimit = Number(env.BROWSER_TIME_LIMIT_MOCK);
+      } else if ((limits as any).browserTimeSecondsLimit !== undefined) {
+        browserLimits.browserTimeSecondsLimit = (limits as any).browserTimeSecondsLimit;
+      } else if ((limits.maxConcurrentSessions || 1) >= 10) {
+        browserLimits.browserTimeSecondsLimit = "unlimited";
+      } else {
+        browserLimits.browserTimeSecondsLimit = 600;
+      }
+
+      if (
+        browserLimits.browserTimeSecondsLimit !== "unlimited" &&
+        browserLimits.usedBrowserTimeSeconds >= browserLimits.browserTimeSecondsLimit &&
+        browserLimits.timeUntilBrowserTimeReset === undefined
+      ) {
+        const now = new Date();
+        const nextUTC = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1, 0, 0, 0, 0));
+        browserLimits.timeUntilBrowserTimeReset = Math.max(0, Math.floor((nextUTC.getTime() - now.getTime()) / 1000));
+      }
+    } catch (err) {
+      browserLimits = {
+        configured: true,
+        error: err instanceof Error ? err.message : String(err)
+      };
+    }
+  }
+
+  const limitsResponse = {
+    browser: browserLimits,
+    primary_llm: {
+      configured: !!env.AI,
+      model: "@cf/meta/llama-3.1-8b-instruct",
+      usage_dashboard: "https://dash.cloudflare.com/?to=/:account/ai/ai-gateway"
+    },
+    secondary_llm: {
+      configured: !!(env.GOOGLE_API_KEY || env.GEMINI_API_KEY),
+      model: "gemini-2.0-flash",
+      usage_dashboard: "https://dash.cloudflare.com/?to=/:account/ai/ai-gateway"
+    }
+  };
+
+  return new Response(JSON.stringify(limitsResponse, null, 2), {
+    status: 200,
+    headers: {
+      "Content-Type": "application/json",
+      "Access-Control-Allow-Origin": getCorsOrigin(request),
+      "Access-Control-Allow-Methods": "GET, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type"
+    }
+  });
+}
+
+async function handleInfoRequest(request: Request): Promise<Response> {
+  const info = {
+    name: "agent-swarm",
+    description: "Autonomous browser rendering swarm that runs stateful agent sessions.",
+    version: "0.1.0",
+    agents: {
+      ShopperAgent: {
+        description: "Launches a browser rendering session to browse, search, and purchase products in Stripe test-mode.",
+        methods: {
+          runShopping: {
+            description: "Triggers a browser automation sequence with the specified shopping persona.",
+            parameters: {
+              type: "object",
+              properties: {
+                persona: {
+                  type: "string",
+                  description: "The buyer behavior profile (e.g., 'A tech buyer looking for a sticker').",
+                  required: true
+                },
+                url: {
+                  type: "string",
+                  description: "Override URL to shop on. Defaults to the configured SHOP_URL.",
+                  required: false
+                }
+              }
+            },
+            returns: {
+              type: "string",
+              description: "A summary string of the shopping session outcome."
+            }
+          }
+        }
+      }
+    }
+  };
+
+  return new Response(JSON.stringify(info, null, 2), {
+    status: 200,
+    headers: {
+      "Content-Type": "application/json",
+      "Access-Control-Allow-Origin": getCorsOrigin(request),
+      "Access-Control-Allow-Methods": "GET, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type"
+    }
+  });
+}
+
 export default {
   async fetch(request: Request, env: Env) {
     const url = new URL(request.url);
@@ -627,115 +743,12 @@ export default {
 
     // 2. Serve public API limits/usage data without requiring signatures
     if (url.pathname === "/limits" || url.pathname === "/usage") {
-      let browserLimits: any = { configured: false };
-      if (env.MYBROWSER) {
-        try {
-          const limits = await puppeteer.limits(env.MYBROWSER);
-          browserLimits = {
-            ...(limits as any),
-            configured: true,
-            maxConcurrentSessions: limits.maxConcurrentSessions,
-            activeSessionsCount: limits.activeSessions ? limits.activeSessions.length : 0,
-            allowedBrowserAcquisitions: limits.allowedBrowserAcquisitions,
-            timeUntilNextAcquisition: limits.timeUntilNextAllowedBrowserAcquisition,
-            usedBrowserTimeSeconds: (limits as any).usedBrowserTimeSeconds || 0,
-            timeUntilBrowserTimeReset: (limits as any).timeUntilBrowserTimeReset,
-            browserTimeSecondsLimit: env.BROWSER_TIME_LIMIT_MOCK !== undefined ? 
-              Number(env.BROWSER_TIME_LIMIT_MOCK) : 
-              ((limits as any).browserTimeSecondsLimit !== undefined ? 
-                (limits as any).browserTimeSecondsLimit : 
-                ((limits.maxConcurrentSessions || 1) >= 10 ? "unlimited" : 600)),
-            browserTimeSecondsIncluded: (limits.maxConcurrentSessions || 1) >= 10 ? 36000 : 600
-          };
-
-          if (
-            browserLimits.browserTimeSecondsLimit !== "unlimited" &&
-            browserLimits.usedBrowserTimeSeconds >= browserLimits.browserTimeSecondsLimit &&
-            browserLimits.timeUntilBrowserTimeReset === undefined
-          ) {
-            const now = new Date();
-            const nextUTC = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1, 0, 0, 0, 0));
-            browserLimits.timeUntilBrowserTimeReset = Math.max(0, Math.floor((nextUTC.getTime() - now.getTime()) / 1000));
-          }
-        } catch (err) {
-          browserLimits = {
-            configured: true,
-            error: err instanceof Error ? err.message : String(err)
-          };
-        }
-      }
-
-      const limitsResponse = {
-        browser: browserLimits,
-        primary_llm: {
-          configured: !!env.AI,
-          model: "@cf/meta/llama-3.1-8b-instruct",
-          usage_dashboard: "https://dash.cloudflare.com/?to=/:account/ai/ai-gateway"
-        },
-        secondary_llm: {
-          configured: !!(env.GOOGLE_API_KEY || env.GEMINI_API_KEY),
-          model: "gemini-2.0-flash",
-          usage_dashboard: "https://dash.cloudflare.com/?to=/:account/ai/ai-gateway"
-        }
-      };
-
-      return new Response(JSON.stringify(limitsResponse, null, 2), {
-        status: 200,
-        headers: {
-          "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": getCorsOrigin(request),
-          "Access-Control-Allow-Methods": "GET, OPTIONS",
-          "Access-Control-Allow-Headers": "Content-Type"
-        }
-      });
+      return handleLimitsRequest(request, env);
     }
 
     // 3. Serve public API metadata without requiring signatures
     if (url.pathname === "/info" || url.pathname === "/inspect") {
-      const info = {
-        name: "agent-swarm",
-        description: "Autonomous browser rendering swarm that runs stateful agent sessions.",
-        version: "0.1.0",
-        agents: {
-          ShopperAgent: {
-            description: "Launches a browser rendering session to browse, search, and purchase products in Stripe test-mode.",
-            methods: {
-              runShopping: {
-                description: "Triggers a browser automation sequence with the specified shopping persona.",
-                parameters: {
-                  type: "object",
-                  properties: {
-                    persona: {
-                      type: "string",
-                      description: "The buyer behavior profile (e.g., 'A tech buyer looking for a sticker').",
-                      required: true
-                    },
-                    url: {
-                      type: "string",
-                      description: "Override URL to shop on. Defaults to the configured SHOP_URL.",
-                      required: false
-                    }
-                  }
-                },
-                returns: {
-                  type: "string",
-                  description: "A summary string of the shopping session outcome."
-                }
-              }
-            }
-          }
-        }
-      };
-
-      return new Response(JSON.stringify(info, null, 2), {
-        status: 200,
-        headers: {
-          "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": getCorsOrigin(request),
-          "Access-Control-Allow-Methods": "GET, OPTIONS",
-          "Access-Control-Allow-Headers": "Content-Type"
-        }
-      });
+      return handleInfoRequest(request);
     }
 
     // 4. Verify access signature if secret is configured
