@@ -14,7 +14,7 @@
     "limits": "node scripts/get-limits.cjs"
   },
   "dependencies": {
-    "@browserbasehq/stagehand": "2.5.x",
+    "@browserbasehq/stagehand": "3.6.x",
     "@cloudflare/playwright": "^1.3.0",
     "@cloudflare/puppeteer": "latest",
     "agents": "latest",
