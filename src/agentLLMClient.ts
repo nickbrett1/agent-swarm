@@ -53,7 +53,7 @@ export class AgentLLMClient extends LLMClient {
             contents,
             generationConfig: {
               responseMimeType: schema ? "application/json" : undefined,
-              responseSchema: schema ? zodToJsonSchema(schema) : undefined,
+              responseSchema: schema ? zodToJsonSchema(schema as any) : undefined,
               temperature: 0,
             }
           })
@@ -96,7 +96,7 @@ export class AgentLLMClient extends LLMClient {
       messages: formattedMessages,
       response_format: schema ? {
         type: "json_schema",
-        json_schema: zodToJsonSchema(schema),
+        json_schema: zodToJsonSchema(schema as any),
       } : undefined,
       temperature: 0,
     }) as any;

@@ -39,10 +39,15 @@ const mockPage = {
   waitForLoadState: vi.fn(),
 };
 
+const mockContext = {
+  activePage: vi.fn().mockReturnValue(mockPage),
+  pages: vi.fn().mockReturnValue([mockPage]),
+};
+
 const mockStagehand = {
   init: vi.fn(),
   close: vi.fn(),
-  page: mockPage,
+  context: mockContext,
 };
 
 vi.mock("@browserbasehq/stagehand", () => {

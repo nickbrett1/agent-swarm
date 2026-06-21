@@ -269,8 +269,8 @@ export class StagehandBrowserHelper {
           cdpUrl: url,
         },
         llmClient,
-        modelName: "google/gemini-2.0-flash",
-        modelClientOptions: {
+        model: {
+          modelName: "google/gemini-2.0-flash",
           apiKey: this.apiKey || "dummy-key",
         },
         verbose: 1,
@@ -358,16 +358,16 @@ export class StagehandBrowserHelper {
 
   private getActivePage(): any {
     if (!this.stagehand) throw new Error("Browser not initialized");
-    const currentPage = this.stagehand.page;
+    const currentPage = this.stagehand.context.activePage();
     try {
       const context = this.stagehand.context;
       if (context) {
         const pages = context.pages();
         if (pages && pages.length > 0) {
-          // Find the last opened page that is not closed
+          // Find the last opened page
           for (let i = pages.length - 1; i >= 0; i--) {
             const p = pages[i];
-            if (p && !p.isClosed()) {
+            if (p) {
               if (p !== currentPage) {
                 console.log(`[StagehandBrowserHelper] Switching active page to newer tab: ${p.url()}`);
               }
