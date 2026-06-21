@@ -11,20 +11,20 @@ function getFetchUrlString(request: any): string {
   if (typeof request === "string") {
     return request;
   } else if (request && typeof request === "object") {
-    if (typeof request.toString === "function") {
+    if (typeof request?.toString === "function") {
       return request.toString();
     } else {
-      return request.url || "";
+      return request?.url || "";
     }
   }
   return "";
 }
 
 function getFetchMethod(request: any, init?: any): string {
-  if (init && init.method) {
+  if (init?.method) {
     return init.method;
   } else if (request && typeof request === "object" && "method" in request) {
-    return request.method || "GET";
+    return request?.method || "GET";
   }
   return "GET";
 }
@@ -90,11 +90,11 @@ if (chromium && chromium.connectOverCDP) {
   try {
     const mod = playwrightModule as { default?: { chromium?: BrowserType } };
     const playwrightDefault = mod.default;
-    if (playwrightDefault && playwrightDefault.chromium) {
+    if (playwrightDefault?.chromium) {
       playwrightDefault.chromium.connectOverCDP = patchedConnectOverCDP as typeof chromium.connectOverCDP;
     }
   } catch (e) {
-    // Ignored
+    console.warn("Ignored error patching default connectOverCDP:", e);
   }
 }
 
@@ -131,9 +131,9 @@ export class StagehandBrowserHelper {
   private interactiveElements: InteractiveElement[] = [];
 
   constructor(
-    private browserBinding: any,
-    private aiBinding?: any,
-    private apiKey?: string
+    private readonly browserBinding: any,
+    private readonly aiBinding?: any,
+    private readonly apiKey?: string
   ) {}
 
   private async clearStaleSessions(): Promise<number> {
@@ -185,7 +185,7 @@ export class StagehandBrowserHelper {
     try {
       const wEnv = workersEnv as any;
       console.log("workersEnv status:", !!wEnv, "MYBROWSER:", wEnv ? !!wEnv.MYBROWSER : "no env", "keys:", wEnv ? Object.keys(wEnv) : []);
-      if (wEnv && wEnv.MYBROWSER) {
+      if (wEnv?.MYBROWSER) {
         const browser = wEnv.MYBROWSER;
         const originalFetch = browser.fetch;
         if (originalFetch && !originalFetch.__isPatched) {
@@ -451,7 +451,7 @@ export class StagehandBrowserHelper {
             const rect = el.getBoundingClientRect();
             if (rect.width === 0 || rect.height === 0) return false;
             const style = window.getComputedStyle(el);
-            if (style.display === "none" || style.visibility === "hidden" || parseFloat(style.opacity) === 0) return false;
+            if (style.display === "none" || style.visibility === "hidden" || Number.parseFloat(style.opacity) === 0) return false;
             return true;
           }
 
@@ -512,14 +512,14 @@ export class StagehandBrowserHelper {
         
         try {
           await page.waitForLoadState("load", { timeout: 2000 });
-        } catch {
-          // Ignore
+        } catch (waitErr) {
+          console.warn("Ignored error waiting for load state:", waitErr);
         }
 
         try {
           await page.frames();
-        } catch (e) {
-          // Ignore
+        } catch (framesErr) {
+          console.warn("Ignored error getting frames:", framesErr);
         }
 
         try {
@@ -730,8 +730,8 @@ export class StagehandBrowserHelper {
             await nameLoc.first().fill(name);
             nameFilled = true;
           }
-        } catch (e) {
-          // Ignore frame specific errors
+        } catch (frameErr) {
+          console.warn("Ignored frame specific error while filling Stripe:", frameErr);
         }
       }
     } catch (err) {
