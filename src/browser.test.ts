@@ -55,7 +55,7 @@ vi.mock("@browserbasehq/stagehand", () => {
     Stagehand: vi.fn().mockImplementation(function () {
       return mockStagehand;
     }),
-    LLMClient: class { constructor() {} },
+    LLMClient: class {},
   };
 });
 
