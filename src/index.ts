@@ -62,8 +62,8 @@ export class ShopperAgent extends Agent<Env, ShopperState> {
         range === 'unspecified' ||
         range === 'uniqueLocal'
       );
-    } catch {
-      // If parsing fails, default to treating it as safe or handled elsewhere
+    } catch (ipParseErr) {
+      console.warn("Ignored error parsing IP address:", ipParseErr);
       return false;
     }
   }
@@ -107,7 +107,8 @@ export class ShopperAgent extends Agent<Env, ShopperState> {
           if (!response.ok) return [];
           const data = await response.json() as { Answer?: Array<{ type: number, data: string }> };
           return data.Answer || [];
-        } catch {
+        } catch (dnsErr) {
+          console.warn(`DNS resolution error for ${hostname} type ${type}:`, dnsErr);
           return [];
         }
       };
@@ -134,10 +135,103 @@ export class ShopperAgent extends Agent<Env, ShopperState> {
       }
 
       return true;
-    } catch (e) {
-      // If URL parsing fails, it's malformed and potentially unsafe
+    } catch (urlParseErr) {
+      console.warn("Ignored URL parsing error in isSafeUrl:", urlParseErr);
       return false;
     }
+  }
+
+  private async handleAction(decision: LLMResponse, helper: StagehandBrowserHelper, pageData: any): Promise<{ finished: boolean; outcomeSummary?: string }> {
+    switch (decision.action) {
+      case "click": {
+        if (!decision.targetId) {
+          throw new Error("Action 'click' requires a 'targetId'");
+        }
+        const element = pageData.elements.find((e: any) => e.id === decision.targetId);
+        let isPayOrSubmit = false;
+        if (element && element.text) {
+          const lowerText = element.text.toLowerCase();
+          isPayOrSubmit = lowerText.includes("pay") ||
+            lowerText.includes("submit") ||
+            lowerText.includes("complete") ||
+            lowerText.includes("buy") ||
+            lowerText.includes("purchase");
+        }
+
+        const startUrl = await helper.getPageUrl();
+        const clickOk = await helper.clickElement(decision.targetId);
+        if (!clickOk) {
+          console.warn(JSON.stringify({ message: "Click failed, trying to find alternatives...", targetId: decision.targetId }));
+        }
+
+        if (isPayOrSubmit) {
+          console.log(JSON.stringify({ message: "Pay/Submit/Buy button clicked, waiting for navigation/redirect to settle..." }));
+          const startTime = Date.now();
+          const timeout = 12000;
+          let urlChanged = false;
+          while (Date.now() - startTime < timeout) {
+            await helper.wait(500);
+            const currentUrl = await helper.getPageUrl();
+            if (currentUrl !== startUrl) {
+              urlChanged = true;
+              console.log(JSON.stringify({ message: `URL changed from ${startUrl} to ${currentUrl}. Waiting 2.5s for page load settle...` }));
+              await helper.wait(2500);
+              break;
+            }
+          }
+          if (urlChanged === false) {
+            console.log(JSON.stringify({ message: "URL did not change after click within timeout. Cooldown 2s." }));
+            await helper.wait(2000);
+          }
+        } else {
+          await helper.wait(250);
+        }
+        break;
+      }
+      case "type": {
+        if (!decision.targetId || decision.text === undefined) {
+          throw new Error("Action 'type' requires both 'targetId' and 'text'");
+        }
+        const typeOk = await helper.typeElement(decision.targetId, decision.text);
+        if (!typeOk) {
+          console.warn(JSON.stringify({ message: "Type failed.", targetId: decision.targetId }));
+        }
+        break;
+      }
+      case "stripe_fill": {
+        const card = this.env.STRIPE_TEST_CARD;
+        const expiry = this.env.STRIPE_TEST_EXPIRY;
+        const cvc = this.env.STRIPE_TEST_CVC;
+        const name = this.env.STRIPE_TEST_NAME;
+
+        if (!card || !expiry || !cvc || !name) {
+          throw new Error("Missing required Stripe test credentials in environment configuration.");
+        }
+
+        console.log(JSON.stringify({ message: "Filling Stripe checkout details..." }));
+        const stripeOk = await helper.handleStripeIframe(card, expiry, cvc, name);
+        if (stripeOk) {
+          console.log(JSON.stringify({ message: "Stripe card credentials filled successfully." }));
+        } else {
+          console.warn(JSON.stringify({ message: "Could not find Stripe inputs. Continuing in case fields are on main page..." }));
+        }
+        await helper.wait(200);
+        break;
+      }
+      case "wait": {
+        console.log(JSON.stringify({ message: "Waiting 3 seconds..." }));
+        await helper.wait(3000);
+        break;
+      }
+      case "finish": {
+        return { finished: true, outcomeSummary: decision.explanation };
+      }
+      default: {
+        const _exhaustiveCheck: never = decision.action;
+        throw new Error(`Unsupported action: ${_exhaustiveCheck}`);
+      }
+    }
+    return { finished: false };
   }
 
   /**
@@ -230,105 +324,13 @@ export class ShopperAgent extends Agent<Env, ShopperState> {
         });
 
         // 4. Execute Action
-        switch (decision.action) {
-          case "click": {
-            if (!decision.targetId) {
-              throw new Error("Action 'click' requires a 'targetId'");
-            }
-            // Check if the clicked element is a submit or pay button to wait longer
-            const element = pageData.elements.find(e => e.id === decision.targetId);
-            let isPayOrSubmit = false;
-            if (element && element.text) {
-              const lowerText = element.text.toLowerCase();
-              isPayOrSubmit = lowerText.includes("pay") ||
-                lowerText.includes("submit") ||
-                lowerText.includes("complete") ||
-                lowerText.includes("buy") ||
-                lowerText.includes("purchase");
-            }
-
-            const startUrl = await helper.getPageUrl();
-
-            const clickOk = await helper.clickElement(decision.targetId);
-            if (!clickOk) {
-              console.warn(JSON.stringify({ message: "Click failed, trying to find alternatives...", targetId: decision.targetId }));
-            }
-
-            if (isPayOrSubmit) {
-              console.log(JSON.stringify({ message: "Pay/Submit/Buy button clicked, waiting for navigation/redirect to settle..." }));
-              const startTime = Date.now();
-              const timeout = 12000;
-              let urlChanged = false;
-              while (Date.now() - startTime < timeout) {
-                await helper.wait(500);
-                const currentUrl = await helper.getPageUrl();
-                if (currentUrl !== startUrl) {
-                  urlChanged = true;
-                  console.log(JSON.stringify({ message: `URL changed from ${startUrl} to ${currentUrl}. Waiting 2.5s for page load settle...` }));
-                  await helper.wait(2500);
-                  break;
-                }
-              }
-              if (!urlChanged) {
-                console.log(JSON.stringify({ message: "URL did not change after click within timeout. Cooldown 2s." }));
-                await helper.wait(2000);
-              }
-            } else {
-              await helper.wait(250); // Wait for dynamic layout/routing
-            }
-            break;
+        const actionResult = await this.handleAction(decision, helper, pageData);
+        if (actionResult.finished) {
+          finished = true;
+          if (actionResult.outcomeSummary) {
+            outcomeSummary = actionResult.outcomeSummary;
           }
-
-          case "type": {
-            if (!decision.targetId || decision.text === undefined) {
-              throw new Error("Action 'type' requires both 'targetId' and 'text'");
-            }
-            const typeOk = await helper.typeElement(decision.targetId, decision.text);
-            if (!typeOk) {
-              console.warn(JSON.stringify({ message: "Type failed.", targetId: decision.targetId }));
-            }
-            break;
-          }
-
-          case "stripe_fill": {
-            // Automate Stripe iframe using test credentials from worker config or defaults
-            const card = this.env.STRIPE_TEST_CARD;
-            const expiry = this.env.STRIPE_TEST_EXPIRY;
-            const cvc = this.env.STRIPE_TEST_CVC;
-            const name = this.env.STRIPE_TEST_NAME;
-
-            if (!card || !expiry || !cvc || !name) {
-              throw new Error("Missing required Stripe test credentials in environment configuration.");
-            }
-
-            console.log(JSON.stringify({ message: "Filling Stripe checkout details..." }));
-            const stripeOk = await helper.handleStripeIframe(card, expiry, cvc, name);
-            if (stripeOk) {
-              console.log(JSON.stringify({ message: "Stripe card credentials filled successfully." }));
-            } else {
-              console.warn(JSON.stringify({ message: "Could not find Stripe inputs. Continuing in case fields are on main page..." }));
-            }
-            await helper.wait(200);
-            break;
-          }
-
-          case "wait": {
-            console.log(JSON.stringify({ message: "Waiting 3 seconds..." }));
-            await helper.wait(3000);
-            break;
-          }
-
-          case "finish": {
-            finished = true;
-            outcomeSummary = decision.explanation;
-            this.setState({ ...this.state, status: "completed" });
-            break;
-          }
-
-          default: {
-            const _exhaustiveCheck: never = decision.action;
-            throw new Error(`Unsupported action: ${_exhaustiveCheck}`);
-          }
+          this.setState({ ...this.state, status: "completed" });
         }
 
         // Small cooldown between actions
@@ -609,6 +611,65 @@ function getCorsOrigin(request: Request): string {
   return ALLOWED_ORIGINS[0];
 }
 
+async function buildLimitsResponse(env: Env) {
+  let browserLimits: any = { configured: false };
+  if (env.MYBROWSER) {
+    try {
+      const limits = await puppeteer.limits(env.MYBROWSER);
+      const defaultLimit = (limits.maxConcurrentSessions || 1) >= 10 ? "unlimited" : 600;
+      let browserTimeSecondsLimit = defaultLimit;
+
+      if (env.BROWSER_TIME_LIMIT_MOCK !== undefined) {
+        browserTimeSecondsLimit = Number(env.BROWSER_TIME_LIMIT_MOCK) as any;
+      } else if ((limits as any).browserTimeSecondsLimit !== undefined) {
+        browserTimeSecondsLimit = (limits as any).browserTimeSecondsLimit;
+      }
+
+      browserLimits = {
+        ...(limits as any),
+        configured: true,
+        maxConcurrentSessions: limits.maxConcurrentSessions,
+        activeSessionsCount: limits.activeSessions ? limits.activeSessions.length : 0,
+        allowedBrowserAcquisitions: limits.allowedBrowserAcquisitions,
+        timeUntilNextAcquisition: limits.timeUntilNextAllowedBrowserAcquisition,
+        usedBrowserTimeSeconds: (limits as any).usedBrowserTimeSeconds || 0,
+        timeUntilBrowserTimeReset: (limits as any).timeUntilBrowserTimeReset,
+        browserTimeSecondsLimit,
+        browserTimeSecondsIncluded: (limits.maxConcurrentSessions || 1) >= 10 ? 36000 : 600
+      };
+
+      if (
+        browserLimits.browserTimeSecondsLimit !== "unlimited" &&
+        browserLimits.usedBrowserTimeSeconds >= browserLimits.browserTimeSecondsLimit &&
+        browserLimits.timeUntilBrowserTimeReset === undefined
+      ) {
+        const now = new Date();
+        const nextUTC = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1, 0, 0, 0, 0));
+        browserLimits.timeUntilBrowserTimeReset = Math.max(0, Math.floor((nextUTC.getTime() - now.getTime()) / 1000));
+      }
+    } catch (err) {
+      browserLimits = {
+        configured: true,
+        error: err instanceof Error ? err.message : String(err)
+      };
+    }
+  }
+
+  return {
+    browser: browserLimits,
+    primary_llm: {
+      configured: !!env.AI,
+      model: "@cf/meta/llama-3.1-8b-instruct",
+      usage_dashboard: "https://dash.cloudflare.com/?to=/:account/ai/ai-gateway"
+    },
+    secondary_llm: {
+      configured: !!(env.GOOGLE_API_KEY || env.GEMINI_API_KEY),
+      model: "gemini-2.0-flash",
+      usage_dashboard: "https://dash.cloudflare.com/?to=/:account/ai/ai-gateway"
+    }
+  };
+}
+
 export default {
   async fetch(request: Request, env: Env) {
     const url = new URL(request.url);
@@ -627,57 +688,7 @@ export default {
 
     // 2. Serve public API limits/usage data without requiring signatures
     if (url.pathname === "/limits" || url.pathname === "/usage") {
-      let browserLimits: any = { configured: false };
-      if (env.MYBROWSER) {
-        try {
-          const limits = await puppeteer.limits(env.MYBROWSER);
-          browserLimits = {
-            ...(limits as any),
-            configured: true,
-            maxConcurrentSessions: limits.maxConcurrentSessions,
-            activeSessionsCount: limits.activeSessions ? limits.activeSessions.length : 0,
-            allowedBrowserAcquisitions: limits.allowedBrowserAcquisitions,
-            timeUntilNextAcquisition: limits.timeUntilNextAllowedBrowserAcquisition,
-            usedBrowserTimeSeconds: (limits as any).usedBrowserTimeSeconds || 0,
-            timeUntilBrowserTimeReset: (limits as any).timeUntilBrowserTimeReset,
-            browserTimeSecondsLimit: env.BROWSER_TIME_LIMIT_MOCK !== undefined ?
-              Number(env.BROWSER_TIME_LIMIT_MOCK) :
-              ((limits as any).browserTimeSecondsLimit !== undefined ?
-                (limits as any).browserTimeSecondsLimit :
-                ((limits.maxConcurrentSessions || 1) >= 10 ? "unlimited" : 600)),
-            browserTimeSecondsIncluded: (limits.maxConcurrentSessions || 1) >= 10 ? 36000 : 600
-          };
-
-          if (
-            browserLimits.browserTimeSecondsLimit !== "unlimited" &&
-            browserLimits.usedBrowserTimeSeconds >= browserLimits.browserTimeSecondsLimit &&
-            browserLimits.timeUntilBrowserTimeReset === undefined
-          ) {
-            const now = new Date();
-            const nextUTC = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1, 0, 0, 0, 0));
-            browserLimits.timeUntilBrowserTimeReset = Math.max(0, Math.floor((nextUTC.getTime() - now.getTime()) / 1000));
-          }
-        } catch (err) {
-          browserLimits = {
-            configured: true,
-            error: err instanceof Error ? err.message : String(err)
-          };
-        }
-      }
-
-      const limitsResponse = {
-        browser: browserLimits,
-        primary_llm: {
-          configured: !!env.AI,
-          model: "@cf/meta/llama-3.1-8b-instruct",
-          usage_dashboard: "https://dash.cloudflare.com/?to=/:account/ai/ai-gateway"
-        },
-        secondary_llm: {
-          configured: !!(env.GOOGLE_API_KEY || env.GEMINI_API_KEY),
-          model: "gemini-2.0-flash",
-          usage_dashboard: "https://dash.cloudflare.com/?to=/:account/ai/ai-gateway"
-        }
-      };
+      const limitsResponse = await buildLimitsResponse(env);
 
       return new Response(JSON.stringify(limitsResponse, null, 2), {
         status: 200,
