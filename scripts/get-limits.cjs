@@ -1,14 +1,14 @@
 #!/usr/bin/env node
 // scripts/get-limits.js
 
-const http = require('node:http');
+const http = require('http');
 
 // Get port from command line arguments or default to 8787
 const args = process.argv.slice(2);
 let port = 8787;
 const portArgIndex = args.indexOf('--port');
 if (portArgIndex !== -1 && args[portArgIndex + 1]) {
-  port = Number.parseInt(args[portArgIndex + 1], 10);
+  port = parseInt(args[portArgIndex + 1], 10);
 }
 
 const url = `http://localhost:${port}/limits`;

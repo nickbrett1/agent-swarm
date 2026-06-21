@@ -21,7 +21,7 @@ function getFetchUrlString(request: any): string {
 }
 
 function getFetchMethod(request: any, init?: any): string {
-  if (init?.method) {
+  if (init && init.method) {
     return init.method;
   } else if (request && typeof request === "object" && "method" in request) {
     return request.method || "GET";
@@ -67,7 +67,7 @@ try {
   // Ignored in tests where @cloudflare/playwright is mocked without chromium
 }
 
-if (chromium?.connectOverCDP) {
+if (chromium && chromium.connectOverCDP) {
   const originalConnectOverCDP = chromium.connectOverCDP;
   const patchedConnectOverCDP = async (...args: any[]) => {
     console.log("Patched connectOverCDP invoked");
@@ -90,7 +90,7 @@ if (chromium?.connectOverCDP) {
   try {
     const mod = playwrightModule as { default?: { chromium?: BrowserType } };
     const playwrightDefault = mod.default;
-    if (playwrightDefault?.chromium) {
+    if (playwrightDefault && playwrightDefault.chromium) {
       playwrightDefault.chromium.connectOverCDP = patchedConnectOverCDP as typeof chromium.connectOverCDP;
     }
   } catch (e) {
@@ -131,9 +131,9 @@ export class StagehandBrowserHelper {
   private interactiveElements: InteractiveElement[] = [];
 
   constructor(
-    private readonly browserBinding: any,
-    private readonly aiBinding?: any,
-    private readonly apiKey?: string
+    private browserBinding: any,
+    private aiBinding?: any,
+    private apiKey?: string
   ) {}
 
   private async clearStaleSessions(): Promise<number> {
@@ -178,11 +178,14 @@ export class StagehandBrowserHelper {
     return 0;
   }
 
-  private async patchWorkersEnvBrowser(): Promise<void> {
+  async init(): Promise<void> {
+    console.log("Initializing Stagehand browser helper...");
+
+    // Patch global env.MYBROWSER to intercept and handle WebSocket upgrade failures gracefully
     try {
       const wEnv = workersEnv as any;
       console.log("workersEnv status:", !!wEnv, "MYBROWSER:", wEnv ? !!wEnv.MYBROWSER : "no env", "keys:", wEnv ? Object.keys(wEnv) : []);
-      if (wEnv?.MYBROWSER) {
+      if (wEnv && wEnv.MYBROWSER) {
         const browser = wEnv.MYBROWSER;
         const originalFetch = browser.fetch;
         if (originalFetch && !originalFetch.__isPatched) {
@@ -220,34 +223,6 @@ export class StagehandBrowserHelper {
     } catch (e) {
       console.error("Error patching workersEnv.MYBROWSER:", e);
     }
-  }
-
-  private async tryExistingSession(defaultCdpUrl: string): Promise<{cdpUrl: string, usingExistingSession: boolean}> {
-    try {
-      const sessions = await puppeteer.sessions(this.browserBinding);
-      if (sessions?.length > 0) {
-        const sessionId = sessions[0].sessionId || (sessions[0] as { id?: string }).id;
-        if (sessionId) {
-          console.log(`Attempting to connect to existing session: ${sessionId}`);
-          const rawUrl = endpointURLString(this.browserBinding, { sessionId });
-          // Manually append browser_session to query parameters so that @cloudflare/playwright's
-          // connectOverCDP override correctly routes to connect() instead of launch().
-          const parsedUrl = new URL(rawUrl);
-          parsedUrl.searchParams.set("browser_session", sessionId);
-          return { cdpUrl: parsedUrl.toString(), usingExistingSession: true };
-        }
-      }
-    } catch (err) {
-      console.warn("Failed to check existing sessions, using default cdpUrl:", err);
-    }
-    return { cdpUrl: defaultCdpUrl, usingExistingSession: false };
-  }
-
-  async init(): Promise<void> {
-    console.log("Initializing Stagehand browser helper...");
-
-    // Patch global env.MYBROWSER to intercept and handle WebSocket upgrade failures gracefully
-    await this.patchWorkersEnvBrowser();
 
     // 1. Clean up stale sessions
     const cleared = await this.clearStaleSessions();
@@ -258,7 +233,28 @@ export class StagehandBrowserHelper {
 
     // 2. Check for limits and build connection string
     const defaultCdpUrl = endpointURLString(this.browserBinding);
-    let { cdpUrl, usingExistingSession } = await this.tryExistingSession(defaultCdpUrl);
+    let cdpUrl = defaultCdpUrl;
+    let usingExistingSession = false;
+
+    // Try to connect using existing sessions if available
+    try {
+      const sessions = await puppeteer.sessions(this.browserBinding);
+      if (sessions && sessions.length > 0) {
+        const sessionId = sessions[0].sessionId || (sessions[0] as { id?: string }).id;
+        if (sessionId) {
+          console.log(`Attempting to connect to existing session: ${sessionId}`);
+          const rawUrl = endpointURLString(this.browserBinding, { sessionId });
+          // Manually append browser_session to query parameters so that @cloudflare/playwright's
+          // connectOverCDP override correctly routes to connect() instead of launch().
+          const parsedUrl = new URL(rawUrl);
+          parsedUrl.searchParams.set("browser_session", sessionId);
+          cdpUrl = parsedUrl.toString();
+          usingExistingSession = true;
+        }
+      }
+    } catch (err) {
+      console.warn("Failed to check existing sessions, using default cdpUrl:", err);
+    }
 
     const llmClient = new AgentLLMClient({
       binding: this.aiBinding,
@@ -273,8 +269,8 @@ export class StagehandBrowserHelper {
           cdpUrl: url,
         },
         llmClient,
-        modelName: "google/gemini-2.0-flash",
-        modelClientOptions: {
+        model: {
+          modelName: "google/gemini-2.0-flash",
           apiKey: this.apiKey || "dummy-key",
         },
         verbose: 1,
@@ -282,7 +278,7 @@ export class StagehandBrowserHelper {
     };
 
     const setupBlocker = async (page: any) => {
-      if (page?.route && typeof page.route === "function") {
+      if (page && typeof page.route === "function") {
         await page.route("**/*", (route: any) => {
           const request = route.request();
           const resourceType = request.resourceType();
@@ -362,22 +358,22 @@ export class StagehandBrowserHelper {
 
   private getActivePage(): any {
     if (!this.stagehand) throw new Error("Browser not initialized");
-    const currentPage = this.stagehand.page;
+    const currentPage = this.stagehand.context.activePage();
     try {
       const context = this.stagehand.context;
-      if (!context) return currentPage;
-
-      const pages = context.pages();
-      if (!pages || pages.length === 0) return currentPage;
-
-      // Find the last opened page that is not closed
-      for (let i = pages.length - 1; i >= 0; i--) {
-        const p = pages[i];
-        if (p && !p.isClosed()) {
-          if (p !== currentPage) {
-            console.log(`[StagehandBrowserHelper] Switching active page to newer tab: ${p.url()}`);
+      if (context) {
+        const pages = context.pages();
+        if (pages && pages.length > 0) {
+          // Find the last opened page
+          for (let i = pages.length - 1; i >= 0; i--) {
+            const p = pages[i];
+            if (p) {
+              if (p !== currentPage) {
+                console.log(`[StagehandBrowserHelper] Switching active page to newer tab: ${p.url()}`);
+              }
+              return p;
+            }
           }
-          return p;
         }
       }
     } catch (e) {
@@ -455,7 +451,7 @@ export class StagehandBrowserHelper {
             const rect = el.getBoundingClientRect();
             if (rect.width === 0 || rect.height === 0) return false;
             const style = window.getComputedStyle(el);
-            if (style.display === "none" || style.visibility === "hidden" || Number.parseFloat(style.opacity) === 0) return false;
+            if (style.display === "none" || style.visibility === "hidden" || parseFloat(style.opacity) === 0) return false;
             return true;
           }
 
@@ -517,13 +513,13 @@ export class StagehandBrowserHelper {
         try {
           await page.waitForLoadState("load", { timeout: 2000 });
         } catch {
-          // Ignore expected load state timeout
+          // Ignore
         }
 
         try {
           await page.frames();
         } catch (e) {
-          // Ignore frame access error
+          // Ignore
         }
 
         try {
@@ -697,61 +693,54 @@ export class StagehandBrowserHelper {
   /**
    * Dynamic fallback logic to auto-fill Stripe Checkout iframe.
    */
-  private async fillStripeFrame(frame: any, card: string, expiry: string, cvc: string, name: string) {
-    let results = { cardFilled: false, expiryFilled: false, cvcFilled: false, nameFilled: false };
-    try {
-      const cardLoc = frame.locator(STRIPE_CARD_SELECTORS.join(','));
-      if (await cardLoc.count() > 0) {
-        await cardLoc.first().fill(card);
-        results.cardFilled = true;
-      }
-
-      const expiryLoc = frame.locator(STRIPE_EXPIRY_SELECTORS.join(','));
-      if (await expiryLoc.count() > 0) {
-        await expiryLoc.first().fill(expiry);
-        results.expiryFilled = true;
-      }
-
-      const cvcLoc = frame.locator(STRIPE_CVC_SELECTORS.join(','));
-      if (await cvcLoc.count() > 0) {
-        await cvcLoc.first().fill(cvc);
-        results.cvcFilled = true;
-      }
-
-      const nameLoc = frame.locator(STRIPE_NAME_SELECTORS.join(','));
-      if (await nameLoc.count() > 0) {
-        await nameLoc.first().fill(name);
-        results.nameFilled = true;
-      }
-    } catch (e) {
-      // Ignore frame specific errors during element extraction
-    }
-    return results;
-  }
-
   async handleStripeIframe(card: string, expiry: string, cvc: string, name: string): Promise<boolean> {
     if (!this.stagehand) throw new Error("Browser not initialized");
     const page = this.getActivePage();
 
     console.log("Filling Stripe Checkout inputs using Playwright locator...");
-    let status = { cardFilled: false, expiryFilled: false, cvcFilled: false, nameFilled: false };
+    let cardFilled = false;
+    let expiryFilled = false;
+    let cvcFilled = false;
+    let nameFilled = false;
 
     try {
       const frames = page.frames();
       for (const frame of frames) {
-        const frameStatus = await this.fillStripeFrame(frame, card, expiry, cvc, name);
-        if (frameStatus.cardFilled) status.cardFilled = true;
-        if (frameStatus.expiryFilled) status.expiryFilled = true;
-        if (frameStatus.cvcFilled) status.cvcFilled = true;
-        if (frameStatus.nameFilled) status.nameFilled = true;
+        try {
+          const cardLoc = frame.locator(STRIPE_CARD_SELECTORS.join(','));
+          if (await cardLoc.count() > 0) {
+            await cardLoc.first().fill(card);
+            cardFilled = true;
+          }
+
+          const expiryLoc = frame.locator(STRIPE_EXPIRY_SELECTORS.join(','));
+          if (await expiryLoc.count() > 0) {
+            await expiryLoc.first().fill(expiry);
+            expiryFilled = true;
+          }
+
+          const cvcLoc = frame.locator(STRIPE_CVC_SELECTORS.join(','));
+          if (await cvcLoc.count() > 0) {
+            await cvcLoc.first().fill(cvc);
+            cvcFilled = true;
+          }
+
+          const nameLoc = frame.locator(STRIPE_NAME_SELECTORS.join(','));
+          if (await nameLoc.count() > 0) {
+            await nameLoc.first().fill(name);
+            nameFilled = true;
+          }
+        } catch (e) {
+          // Ignore frame specific errors
+        }
       }
     } catch (err) {
       console.warn("Playwright direct Stripe fill encountered an error:", err);
     }
 
-    console.log(`Stripe Playwright fill summary: Card=${status.cardFilled}, Expiry=${status.expiryFilled}, CVC=${status.cvcFilled}, Name=${status.nameFilled}`);
+    console.log(`Stripe Playwright fill summary: Card=${cardFilled}, Expiry=${expiryFilled}, CVC=${cvcFilled}, Name=${nameFilled}`);
 
-    if (status.cardFilled && status.expiryFilled && status.cvcFilled) {
+    if (cardFilled && expiryFilled && cvcFilled) {
       console.log("Stripe details successfully filled via Playwright.");
       return true;
     }
