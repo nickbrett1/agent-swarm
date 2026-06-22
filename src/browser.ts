@@ -56,6 +56,108 @@ function stripFetchQueryParameters(request: any, urlStr: string, method: string)
   return { newRequest, newUrlStr };
 }
 
+async function fillStripeLocators(frames: any[], card: string, expiry: string, cvc: string, name: string): Promise<{ cardFilled: boolean, expiryFilled: boolean, cvcFilled: boolean, nameFilled: boolean }> {
+  let cardFilled = false;
+  let expiryFilled = false;
+  let cvcFilled = false;
+  let nameFilled = false;
+
+  for (const frame of frames) {
+    try {
+      const cardLoc = frame.locator(STRIPE_CARD_SELECTORS.join(','));
+      if (await cardLoc.count() > 0) {
+        await cardLoc.first().fill(card);
+        cardFilled = true;
+      }
+
+      const expiryLoc = frame.locator(STRIPE_EXPIRY_SELECTORS.join(','));
+      if (await expiryLoc.count() > 0) {
+        await expiryLoc.first().fill(expiry);
+        expiryFilled = true;
+      }
+
+      const cvcLoc = frame.locator(STRIPE_CVC_SELECTORS.join(','));
+      if (await cvcLoc.count() > 0) {
+        await cvcLoc.first().fill(cvc);
+        cvcFilled = true;
+      }
+
+      const nameLoc = frame.locator(STRIPE_NAME_SELECTORS.join(','));
+      if (await nameLoc.count() > 0) {
+        await nameLoc.first().fill(name);
+        nameFilled = true;
+      }
+    } catch (frameErr) {
+      console.warn("Ignored frame specific error while filling Stripe:", frameErr);
+    }
+  }
+
+  return { cardFilled, expiryFilled, cvcFilled, nameFilled };
+}
+
+function findNewestPage(context: any, currentPage: any): any {
+  if (context) {
+    const pages = context.pages();
+    if (pages && pages.length > 0) {
+      // Find the last opened page
+      for (let i = pages.length - 1; i >= 0; i--) {
+        const p = pages[i];
+        if (p) {
+          if (p !== currentPage) {
+            console.log(`[StagehandBrowserHelper] Switching active page to newer tab: ${p.url()}`);
+          }
+          return p;
+        }
+      }
+    }
+  }
+  return currentPage;
+}
+
+function patchBrowserFetch() {
+  try {
+    const wEnv = workersEnv as any;
+    console.log("workersEnv status:", !!wEnv, "MYBROWSER:", wEnv ? !!wEnv.MYBROWSER : "no env", "keys:", wEnv ? Object.keys(wEnv) : []);
+    if (wEnv?.MYBROWSER) {
+      const browser = wEnv.MYBROWSER;
+      const originalFetch = browser.fetch;
+      if (originalFetch && !originalFetch.__isPatched) {
+        console.log("Attempting to patch browser.fetch directly...");
+        const patchedFetch = Object.assign(
+          async function(request: any, init?: any) {
+            let urlStr = getFetchUrlString(request);
+            const method = getFetchMethod(request, init);
+
+            const stripped = stripFetchQueryParameters(request, urlStr, method);
+            request = stripped.newRequest;
+            urlStr = stripped.newUrlStr;
+
+            console.log(`[MYBROWSER.fetch] request: ${urlStr} [${method}]`);
+            try {
+              const response = await originalFetch.call(browser, request, init);
+              if (urlStr.includes("/v1/devtools/browser/") && method.toUpperCase() !== "DELETE" && !response.webSocket) {
+                const status = response.status;
+                const text = await response.text().catch(() => "");
+                console.error(`[MYBROWSER.fetch] WebSocket upgrade failed. Status: ${status}, Body: ${text}`);
+                throw new Error(`WebSocket upgrade failed: status ${status}, message: ${text}`);
+              }
+              return response;
+            } catch (err) {
+              console.error("[MYBROWSER.fetch] Error during fetch:", err);
+              throw err;
+            }
+          },
+          { __isPatched: true }
+        );
+        browser.fetch = patchedFetch;
+        console.log("browser.fetch patched directly successfully!");
+      }
+    }
+  } catch (e) {
+    console.error("Error patching workersEnv.MYBROWSER:", e);
+  }
+}
+
 // Intercept playwright's chromium.connectOverCDP to ensure that when it connects to a remote browser,
 // it always creates a browser context if none exists.
 let lastCDPError: Error | null = null;
@@ -64,10 +166,10 @@ try {
   const mod = playwrightModule as { chromium?: BrowserType, default?: { chromium?: BrowserType } };
   chromium = mod.chromium || mod.default?.chromium;
 } catch (e) {
-  // Ignored in tests where @cloudflare/playwright is mocked without chromium
+  console.warn("Failed to load playwright module:", e instanceof Error ? e.message : String(e));
 }
 
-if (chromium && chromium.connectOverCDP) {
+if (chromium?.connectOverCDP) {
   const originalConnectOverCDP = chromium.connectOverCDP;
   const patchedConnectOverCDP = async (...args: any[]) => {
     console.log("Patched connectOverCDP invoked");
@@ -182,47 +284,7 @@ export class StagehandBrowserHelper {
     console.log("Initializing Stagehand browser helper...");
 
     // Patch global env.MYBROWSER to intercept and handle WebSocket upgrade failures gracefully
-    try {
-      const wEnv = workersEnv as any;
-      console.log("workersEnv status:", !!wEnv, "MYBROWSER:", wEnv ? !!wEnv.MYBROWSER : "no env", "keys:", wEnv ? Object.keys(wEnv) : []);
-      if (wEnv?.MYBROWSER) {
-        const browser = wEnv.MYBROWSER;
-        const originalFetch = browser.fetch;
-        if (originalFetch && !originalFetch.__isPatched) {
-          console.log("Attempting to patch browser.fetch directly...");
-          const patchedFetch = Object.assign(
-            async function(request: any, init?: any) {
-              let urlStr = getFetchUrlString(request);
-              const method = getFetchMethod(request, init);
-
-              const stripped = stripFetchQueryParameters(request, urlStr, method);
-              request = stripped.newRequest;
-              urlStr = stripped.newUrlStr;
-
-              console.log(`[MYBROWSER.fetch] request: ${urlStr} [${method}]`);
-              try {
-                const response = await originalFetch.call(browser, request, init);
-                if (urlStr.includes("/v1/devtools/browser/") && method.toUpperCase() !== "DELETE" && !response.webSocket) {
-                  const status = response.status;
-                  const text = await response.text().catch(() => "");
-                  console.error(`[MYBROWSER.fetch] WebSocket upgrade failed. Status: ${status}, Body: ${text}`);
-                  throw new Error(`WebSocket upgrade failed: status ${status}, message: ${text}`);
-                }
-                return response;
-              } catch (err) {
-                console.error("[MYBROWSER.fetch] Error during fetch:", err);
-                throw err;
-              }
-            },
-            { __isPatched: true }
-          );
-          browser.fetch = patchedFetch;
-          console.log("browser.fetch patched directly successfully!");
-        }
-      }
-    } catch (e) {
-      console.error("Error patching workersEnv.MYBROWSER:", e);
-    }
+    patchBrowserFetch();
 
     // 1. Clean up stale sessions
     const cleared = await this.clearStaleSessions();
@@ -361,21 +423,7 @@ export class StagehandBrowserHelper {
     const currentPage = this.stagehand.context.activePage();
     try {
       const context = this.stagehand.context;
-      if (context) {
-        const pages = context.pages();
-        if (pages && pages.length > 0) {
-          // Find the last opened page
-          for (let i = pages.length - 1; i >= 0; i--) {
-            const p = pages[i];
-            if (p) {
-              if (p !== currentPage) {
-                console.log(`[StagehandBrowserHelper] Switching active page to newer tab: ${p.url()}`);
-              }
-              return p;
-            }
-          }
-        }
-      }
+      return findNewestPage(context, currentPage);
     } catch (e) {
       console.warn("[StagehandBrowserHelper] Failed to inspect pages in context:", e);
     }
@@ -705,35 +753,11 @@ export class StagehandBrowserHelper {
 
     try {
       const frames = page.frames();
-      for (const frame of frames) {
-        try {
-          const cardLoc = frame.locator(STRIPE_CARD_SELECTORS.join(','));
-          if (await cardLoc.count() > 0) {
-            await cardLoc.first().fill(card);
-            cardFilled = true;
-          }
-
-          const expiryLoc = frame.locator(STRIPE_EXPIRY_SELECTORS.join(','));
-          if (await expiryLoc.count() > 0) {
-            await expiryLoc.first().fill(expiry);
-            expiryFilled = true;
-          }
-
-          const cvcLoc = frame.locator(STRIPE_CVC_SELECTORS.join(','));
-          if (await cvcLoc.count() > 0) {
-            await cvcLoc.first().fill(cvc);
-            cvcFilled = true;
-          }
-
-          const nameLoc = frame.locator(STRIPE_NAME_SELECTORS.join(','));
-          if (await nameLoc.count() > 0) {
-            await nameLoc.first().fill(name);
-            nameFilled = true;
-          }
-        } catch (frameErr) {
-          console.warn("Ignored frame specific error while filling Stripe:", frameErr);
-        }
-      }
+      const result = await fillStripeLocators(frames, card, expiry, cvc, name);
+      cardFilled = result.cardFilled;
+      expiryFilled = result.expiryFilled;
+      cvcFilled = result.cvcFilled;
+      nameFilled = result.nameFilled;
     } catch (err) {
       console.warn("Playwright direct Stripe fill encountered an error:", err);
     }
