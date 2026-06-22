@@ -58,8 +58,8 @@ export class AgentLLMClient extends LLMClient {
       throw new Error(`Gemini API returned status ${response.status}: ${await response.text()}`);
     }
 
-    const data = await response.json();
-    const textResponse = (data as any).candidates?.[0]?.content?.parts?.[0]?.text;
+    const data: any = await response.json();
+    const textResponse = data.candidates?.[0]?.content?.parts?.[0]?.text;
     if (!textResponse) {
       throw new Error("Empty response from Gemini API");
     }

@@ -162,64 +162,76 @@ export class ShopperAgent extends Agent<Env, ShopperState> {
     }
   }
 
+  private async handleClickAction(decision: LLMResponse, helper: StagehandBrowserHelper, pageData: any): Promise<void> {
+    if (!decision.targetId) {
+      throw new Error("Action 'click' requires a 'targetId'");
+    }
+    const element = pageData.elements.find((e: any) => e.id === decision.targetId);
+    let isPayOrSubmit = false;
+    if (element && element.text) {
+      const lowerText = element.text.toLowerCase();
+      isPayOrSubmit = lowerText.includes("pay") ||
+        lowerText.includes("submit") ||
+        lowerText.includes("complete") ||
+        lowerText.includes("buy") ||
+        lowerText.includes("purchase");
+    }
+
+    const startUrl = await helper.getPageUrl();
+    const clickOk = await helper.clickElement(decision.targetId);
+    if (!clickOk) {
+      console.warn(JSON.stringify({ message: "Click failed, trying to find alternatives...", targetId: decision.targetId }));
+    }
+
+    if (isPayOrSubmit) {
+      await this.waitForUrlChange(helper, startUrl);
+    } else {
+      await helper.wait(250);
+    }
+  }
+
+  private async handleTypeAction(decision: LLMResponse, helper: StagehandBrowserHelper): Promise<void> {
+    if (!decision.targetId || decision.text === undefined) {
+      throw new Error("Action 'type' requires both 'targetId' and 'text'");
+    }
+    const typeOk = await helper.typeElement(decision.targetId, decision.text);
+    if (!typeOk) {
+      console.warn(JSON.stringify({ message: "Type failed.", targetId: decision.targetId }));
+    }
+  }
+
+  private async handleStripeFillAction(helper: StagehandBrowserHelper): Promise<void> {
+    const card = this.env.STRIPE_TEST_CARD;
+    const expiry = this.env.STRIPE_TEST_EXPIRY;
+    const cvc = this.env.STRIPE_TEST_CVC;
+    const name = this.env.STRIPE_TEST_NAME;
+
+    if (!card || !expiry || !cvc || !name) {
+      throw new Error("Missing required Stripe test credentials in environment configuration.");
+    }
+
+    console.log(JSON.stringify({ message: "Filling Stripe checkout details..." }));
+    const stripeOk = await helper.handleStripeIframe(card, expiry, cvc, name);
+    if (stripeOk) {
+      console.log(JSON.stringify({ message: "Stripe card credentials filled successfully." }));
+    } else {
+      console.warn(JSON.stringify({ message: "Could not find Stripe inputs. Continuing in case fields are on main page..." }));
+    }
+    await helper.wait(200);
+  }
+
   private async handleAction(decision: LLMResponse, helper: StagehandBrowserHelper, pageData: any): Promise<{ finished: boolean; outcomeSummary?: string }> {
     switch (decision.action) {
       case "click": {
-        if (!decision.targetId) {
-          throw new Error("Action 'click' requires a 'targetId'");
-        }
-        const element = pageData.elements.find((e: any) => e.id === decision.targetId);
-        let isPayOrSubmit = false;
-        if (element && element.text) {
-          const lowerText = element.text.toLowerCase();
-          isPayOrSubmit = lowerText.includes("pay") ||
-            lowerText.includes("submit") ||
-            lowerText.includes("complete") ||
-            lowerText.includes("buy") ||
-            lowerText.includes("purchase");
-        }
-
-        const startUrl = await helper.getPageUrl();
-        const clickOk = await helper.clickElement(decision.targetId);
-        if (!clickOk) {
-          console.warn(JSON.stringify({ message: "Click failed, trying to find alternatives...", targetId: decision.targetId }));
-        }
-
-        if (isPayOrSubmit) {
-          await this.waitForUrlChange(helper, startUrl);
-        } else {
-          await helper.wait(250);
-        }
+        await this.handleClickAction(decision, helper, pageData);
         break;
       }
       case "type": {
-        if (!decision.targetId || decision.text === undefined) {
-          throw new Error("Action 'type' requires both 'targetId' and 'text'");
-        }
-        const typeOk = await helper.typeElement(decision.targetId, decision.text);
-        if (!typeOk) {
-          console.warn(JSON.stringify({ message: "Type failed.", targetId: decision.targetId }));
-        }
+        await this.handleTypeAction(decision, helper);
         break;
       }
       case "stripe_fill": {
-        const card = this.env.STRIPE_TEST_CARD;
-        const expiry = this.env.STRIPE_TEST_EXPIRY;
-        const cvc = this.env.STRIPE_TEST_CVC;
-        const name = this.env.STRIPE_TEST_NAME;
-
-        if (!card || !expiry || !cvc || !name) {
-          throw new Error("Missing required Stripe test credentials in environment configuration.");
-        }
-
-        console.log(JSON.stringify({ message: "Filling Stripe checkout details..." }));
-        const stripeOk = await helper.handleStripeIframe(card, expiry, cvc, name);
-        if (stripeOk) {
-          console.log(JSON.stringify({ message: "Stripe card credentials filled successfully." }));
-        } else {
-          console.warn(JSON.stringify({ message: "Could not find Stripe inputs. Continuing in case fields are on main page..." }));
-        }
-        await helper.wait(200);
+        await this.handleStripeFillAction(helper);
         break;
       }
       case "wait": {

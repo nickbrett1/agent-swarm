@@ -96,21 +96,20 @@ async function fillStripeLocators(frames: any[], card: string, expiry: string, c
 }
 
 function findNewestPage(context: any, currentPage: any): any {
-  if (context) {
-    const pages = context.pages();
-    if (pages && pages.length > 0) {
-      // Find the last opened page
-      for (let i = pages.length - 1; i >= 0; i--) {
-        const p = pages[i];
-        if (p) {
-          if (p !== currentPage) {
-            console.log(`[StagehandBrowserHelper] Switching active page to newer tab: ${p.url()}`);
-          }
-          return p;
-        }
+  const pages = context?.pages();
+  if (!pages || pages.length === 0) return currentPage;
+
+  // Find the last opened page
+  for (let i = pages.length - 1; i >= 0; i--) {
+    const p = pages[i];
+    if (p) {
+      if (p !== currentPage) {
+        console.log(`[StagehandBrowserHelper] Switching active page to newer tab: ${p.url()}`);
       }
+      return p;
     }
   }
+
   return currentPage;
 }
 
@@ -238,6 +237,22 @@ export class StagehandBrowserHelper {
     private readonly apiKey?: string
   ) {}
 
+  private async deleteSession(s: any): Promise<number> {
+    const sessionId = s.sessionId || (s as { id?: string }).id;
+    if (sessionId) {
+      console.log(`Closing stale session: ${sessionId}`);
+      const delRes = await this.browserBinding.fetch(`https://fake.host/v1/devtools/browser/${sessionId}`, {
+        method: "DELETE",
+      });
+      const delText = await delRes.text();
+      console.log(`Delete response for ${sessionId}: status=${delRes.status}, body=${delText}`);
+      return 1;
+    } else {
+      console.warn("Stale session has no sessionId or id:", JSON.stringify(s));
+      return 0;
+    }
+  }
+
   private async clearStaleSessions(): Promise<number> {
     console.log("clearStaleSessions check: browserBinding =", !!this.browserBinding, "fetch type =", this.browserBinding ? typeof this.browserBinding.fetch : "undefined");
     if (!this.browserBinding || typeof this.browserBinding.fetch !== "function") {
@@ -257,27 +272,94 @@ export class StagehandBrowserHelper {
       if (!sessions || sessions.length === 0) {
         return 0;
       }
-      const deletePromises = sessions.map(async (s) => {
-        const sessionId = s.sessionId || (s as { id?: string }).id;
-        if (sessionId) {
-          console.log(`Closing stale session: ${sessionId}`);
-          const delRes = await this.browserBinding.fetch(`https://fake.host/v1/devtools/browser/${sessionId}`, {
-            method: "DELETE",
-          });
-          const delText = await delRes.text();
-          console.log(`Delete response for ${sessionId}: status=${delRes.status}, body=${delText}`);
-          return 1;
-        } else {
-          console.warn("Stale session has no sessionId or id:", JSON.stringify(s));
-          return 0;
-        }
-      });
+      const deletePromises = sessions.map((s) => this.deleteSession(s));
       const results = await Promise.all(deletePromises);
       return results.reduce((acc: number, curr: number) => acc + curr, 0);
     } catch (clearErr) {
       console.error("Failed to clear stale sessions:", clearErr);
     }
     return 0;
+  }
+
+  private async tryGetExistingSessionUrl(): Promise<string | null> {
+    try {
+      const sessions = await puppeteer.sessions(this.browserBinding);
+      if (sessions && sessions.length > 0) {
+        const sessionId = sessions[0].sessionId || (sessions[0] as { id?: string }).id;
+        if (sessionId) {
+          console.log(`Attempting to connect to existing session: ${sessionId}`);
+          const rawUrl = endpointURLString(this.browserBinding, { sessionId });
+          // Manually append browser_session to query parameters so that @cloudflare/playwright's
+          // connectOverCDP override correctly routes to connect() instead of launch().
+          const parsedUrl = new URL(rawUrl);
+          parsedUrl.searchParams.set("browser_session", sessionId);
+          return parsedUrl.toString();
+        }
+      }
+    } catch (err) {
+      console.warn("Failed to check existing sessions, using default cdpUrl:", err);
+    }
+    return null;
+  }
+
+  private createStagehand(url: string, llmClient: AgentLLMClient): Stagehand {
+    return new Stagehand({
+      env: "LOCAL",
+      localBrowserLaunchOptions: {
+        cdpUrl: url,
+      },
+      llmClient,
+      model: {
+        modelName: "google/gemini-2.0-flash",
+        apiKey: this.apiKey || "dummy-key",
+      },
+      verbose: 1,
+    });
+  }
+
+  private async setupBlocker(page: any): Promise<void> {
+    if (page && typeof page.route === "function") {
+      await page.route("**/*", (route: any) => {
+        const request = route.request();
+        const resourceType = request.resourceType();
+        const url = request.url();
+
+        const isTracker =
+          url.includes("google-analytics.com") ||
+          url.includes("googletagmanager.com") ||
+          url.includes("doubleclick.net") ||
+          url.includes("facebook.net") ||
+          url.includes("hotjar.com") ||
+          url.includes("mixpanel.com") ||
+          url.includes("segment.io");
+
+        const isHeavyAsset =
+          resourceType === "media" ||
+          resourceType === "font";
+
+        if (isTracker || isHeavyAsset) {
+          route.abort();
+        } else {
+          route.continue();
+        }
+      });
+    }
+  }
+
+  private async handleInitError(err: any): Promise<never> {
+    const activeErr = lastCDPError || err;
+    const errMsg = activeErr instanceof Error ? activeErr.message : String(activeErr);
+    if (errMsg.includes("429") || errMsg.toLowerCase().includes("rate limit") || errMsg.includes("Unable to create new browser")) {
+      let limitsInfo;
+      try {
+        limitsInfo = await puppeteer.limits(this.browserBinding);
+      } catch (limitErr) {
+        console.warn("Failed to fetch limits after rate limit error:", limitErr);
+        throw activeErr;
+      }
+      throw new Error(`${errMsg} - Cloudflare Limits: Active Sessions=${limitsInfo.activeSessions ? limitsInfo.activeSessions.length : 0}/${limitsInfo.maxConcurrentSessions}, Acquisitions Allowed=${limitsInfo.allowedBrowserAcquisitions}, Time Until Next Acquisition=${limitsInfo.timeUntilNextAllowedBrowserAcquisition}ms`);
+    }
+    throw activeErr;
   }
 
   async init(): Promise<void> {
@@ -299,23 +381,10 @@ export class StagehandBrowserHelper {
     let usingExistingSession = false;
 
     // Try to connect using existing sessions if available
-    try {
-      const sessions = await puppeteer.sessions(this.browserBinding);
-      if (sessions && sessions.length > 0) {
-        const sessionId = sessions[0].sessionId || (sessions[0] as { id?: string }).id;
-        if (sessionId) {
-          console.log(`Attempting to connect to existing session: ${sessionId}`);
-          const rawUrl = endpointURLString(this.browserBinding, { sessionId });
-          // Manually append browser_session to query parameters so that @cloudflare/playwright's
-          // connectOverCDP override correctly routes to connect() instead of launch().
-          const parsedUrl = new URL(rawUrl);
-          parsedUrl.searchParams.set("browser_session", sessionId);
-          cdpUrl = parsedUrl.toString();
-          usingExistingSession = true;
-        }
-      }
-    } catch (err) {
-      console.warn("Failed to check existing sessions, using default cdpUrl:", err);
+    const existingUrl = await this.tryGetExistingSessionUrl();
+    if (existingUrl) {
+      cdpUrl = existingUrl;
+      usingExistingSession = true;
     }
 
     const llmClient = new AgentLLMClient({
@@ -324,85 +393,27 @@ export class StagehandBrowserHelper {
       logger: (line) => console.log(`[LLMClient] ${line.category}: ${line.message}`),
     });
 
-    const createStagehand = (url: string) => {
-      return new Stagehand({
-        env: "LOCAL",
-        localBrowserLaunchOptions: {
-          cdpUrl: url,
-        },
-        llmClient,
-        model: {
-          modelName: "google/gemini-2.0-flash",
-          apiKey: this.apiKey || "dummy-key",
-        },
-        verbose: 1,
-      });
-    };
-
-    const setupBlocker = async (page: any) => {
-      if (page && typeof page.route === "function") {
-        await page.route("**/*", (route: any) => {
-          const request = route.request();
-          const resourceType = request.resourceType();
-          const url = request.url();
-
-          const isTracker = 
-            url.includes("google-analytics.com") ||
-            url.includes("googletagmanager.com") ||
-            url.includes("doubleclick.net") ||
-            url.includes("facebook.net") ||
-            url.includes("hotjar.com") ||
-            url.includes("mixpanel.com") ||
-            url.includes("segment.io");
-
-          const isHeavyAsset = 
-            resourceType === "media" || 
-            resourceType === "font";
-
-          if (isTracker || isHeavyAsset) {
-            route.abort();
-          } else {
-            route.continue();
-          }
-        });
-      }
-    };
-
-    this.stagehand = createStagehand(cdpUrl);
+    this.stagehand = this.createStagehand(cdpUrl, llmClient);
 
     try {
       lastCDPError = null;
       await this.stagehand.init();
-      await setupBlocker(this.getActivePage());
+      await this.setupBlocker(this.getActivePage());
     } catch (err) {
       if (usingExistingSession) {
         console.warn("Failed to connect to existing session, retrying with a fresh session...", err);
         try {
           cdpUrl = defaultCdpUrl;
-          usingExistingSession = false;
           lastCDPError = null;
-          this.stagehand = createStagehand(cdpUrl);
+          this.stagehand = this.createStagehand(cdpUrl, llmClient);
           await this.stagehand.init();
-          await setupBlocker(this.getActivePage());
+          await this.setupBlocker(this.getActivePage());
           return; // Success on retry
         } catch (retryErr) {
           err = retryErr;
         }
       }
-
-      const activeErr = lastCDPError || err;
-      const errMsg = activeErr instanceof Error ? activeErr.message : String(activeErr);
-      if (errMsg.includes("429") || errMsg.toLowerCase().includes("rate limit") || errMsg.includes("Unable to create new browser")) {
-        let limitsInfo;
-        try {
-          limitsInfo = await puppeteer.limits(this.browserBinding);
-        } catch (limitErr) {
-          console.warn("Failed to fetch limits after rate limit error:", limitErr);
-          throw activeErr;
-        }
-        throw new Error(`${errMsg} - Cloudflare Limits: Active Sessions=${limitsInfo.activeSessions ? limitsInfo.activeSessions.length : 0}/${limitsInfo.maxConcurrentSessions}, Acquisitions Allowed=${limitsInfo.allowedBrowserAcquisitions}, Time Until Next Acquisition=${limitsInfo.timeUntilNextAllowedBrowserAcquisition}ms`);
-      }
-      throw activeErr;
+      return this.handleInitError(err);
     }
   }
 

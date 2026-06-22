@@ -42,7 +42,7 @@ vi.mock('@browserbasehq/stagehand', () => ({
       }
     };
   }),
-  LLMClient: class { init() {} },
+  LLMClient: class { init() { return Promise.resolve(); } },
 }));
 
 // Mock the agents module so that extending Agent doesn't try to invoke cloudflare native bindings
@@ -360,7 +360,7 @@ async function testLimitsFetch(env: any, mockLimitsSetup?: () => Promise<any>) {
   if (mockLimitsSetup) {
     await mockLimitsSetup();
   }
-  const res = await workerDefault.fetch(req, env as any);
+  const res = await workerDefault.fetch(req, env);
   expect(res.status).toBe(200);
   return res.json() as any;
 }
