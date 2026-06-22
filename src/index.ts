@@ -141,6 +141,27 @@ export class ShopperAgent extends Agent<Env, ShopperState> {
     }
   }
 
+  private async waitForUrlChange(helper: StagehandBrowserHelper, startUrl: string): Promise<void> {
+    console.log(JSON.stringify({ message: "Pay/Submit/Buy button clicked, waiting for navigation/redirect to settle..." }));
+    const startTime = Date.now();
+    const timeout = 12000;
+    let urlChanged = false;
+    while (Date.now() - startTime < timeout) {
+      await helper.wait(500);
+      const currentUrl = await helper.getPageUrl();
+      if (currentUrl !== startUrl) {
+        urlChanged = true;
+        console.log(JSON.stringify({ message: `URL changed from ${startUrl} to ${currentUrl}. Waiting 2.5s for page load settle...` }));
+        await helper.wait(2500);
+        break;
+      }
+    }
+    if (urlChanged === false) {
+      console.log(JSON.stringify({ message: "URL did not change after click within timeout. Cooldown 2s." }));
+      await helper.wait(2000);
+    }
+  }
+
   private async handleAction(decision: LLMResponse, helper: StagehandBrowserHelper, pageData: any): Promise<{ finished: boolean; outcomeSummary?: string }> {
     switch (decision.action) {
       case "click": {
@@ -165,24 +186,7 @@ export class ShopperAgent extends Agent<Env, ShopperState> {
         }
 
         if (isPayOrSubmit) {
-          console.log(JSON.stringify({ message: "Pay/Submit/Buy button clicked, waiting for navigation/redirect to settle..." }));
-          const startTime = Date.now();
-          const timeout = 12000;
-          let urlChanged = false;
-          while (Date.now() - startTime < timeout) {
-            await helper.wait(500);
-            const currentUrl = await helper.getPageUrl();
-            if (currentUrl !== startUrl) {
-              urlChanged = true;
-              console.log(JSON.stringify({ message: `URL changed from ${startUrl} to ${currentUrl}. Waiting 2.5s for page load settle...` }));
-              await helper.wait(2500);
-              break;
-            }
-          }
-          if (urlChanged === false) {
-            console.log(JSON.stringify({ message: "URL did not change after click within timeout. Cooldown 2s." }));
-            await helper.wait(2000);
-          }
+          await this.waitForUrlChange(helper, startUrl);
         } else {
           await helper.wait(250);
         }
@@ -611,19 +615,24 @@ function getCorsOrigin(request: Request): string {
   return ALLOWED_ORIGINS[0];
 }
 
+function getBrowserTimeLimit(env: Env, limits: any): any {
+  const defaultLimit = (limits.maxConcurrentSessions || 1) >= 10 ? "unlimited" : 600;
+  let browserTimeSecondsLimit = defaultLimit;
+
+  if (env.BROWSER_TIME_LIMIT_MOCK !== undefined) {
+    browserTimeSecondsLimit = Number(env.BROWSER_TIME_LIMIT_MOCK) as any;
+  } else if (limits.browserTimeSecondsLimit !== undefined) {
+    browserTimeSecondsLimit = limits.browserTimeSecondsLimit;
+  }
+  return browserTimeSecondsLimit;
+}
+
 async function buildLimitsResponse(env: Env) {
   let browserLimits: any = { configured: false };
   if (env.MYBROWSER) {
     try {
       const limits = await puppeteer.limits(env.MYBROWSER);
-      const defaultLimit = (limits.maxConcurrentSessions || 1) >= 10 ? "unlimited" : 600;
-      let browserTimeSecondsLimit = defaultLimit;
-
-      if (env.BROWSER_TIME_LIMIT_MOCK !== undefined) {
-        browserTimeSecondsLimit = Number(env.BROWSER_TIME_LIMIT_MOCK) as any;
-      } else if ((limits as any).browserTimeSecondsLimit !== undefined) {
-        browserTimeSecondsLimit = (limits as any).browserTimeSecondsLimit;
-      }
+      const browserTimeSecondsLimit = getBrowserTimeLimit(env, limits as any);
 
       browserLimits = {
         ...(limits as any),

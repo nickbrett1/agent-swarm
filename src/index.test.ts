@@ -42,7 +42,7 @@ vi.mock('@browserbasehq/stagehand', () => ({
       }
     };
   }),
-  LLMClient: class { constructor() {} },
+  LLMClient: class { init() {} },
 }));
 
 // Mock the agents module so that extending Agent doesn't try to invoke cloudflare native bindings

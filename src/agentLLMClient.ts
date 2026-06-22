@@ -48,7 +48,7 @@ export class AgentLLMClient extends LLMClient {
         contents,
         generationConfig: {
           responseMimeType: schema ? "application/json" : undefined,
-          responseSchema: schema ? zodToJsonSchema(schema as any) : undefined,
+          responseSchema: schema ? zodToJsonSchema(schema) : undefined,
           temperature: 0,
         }
       })
@@ -58,8 +58,8 @@ export class AgentLLMClient extends LLMClient {
       throw new Error(`Gemini API returned status ${response.status}: ${await response.text()}`);
     }
 
-    const data = await response.json() as any;
-    const textResponse = data.candidates?.[0]?.content?.parts?.[0]?.text;
+    const data = await response.json();
+    const textResponse = (data as any).candidates?.[0]?.content?.parts?.[0]?.text;
     if (!textResponse) {
       throw new Error("Empty response from Gemini API");
     }
@@ -84,13 +84,13 @@ export class AgentLLMClient extends LLMClient {
       messages: formattedMessages,
       response_format: schema ? {
         type: "json_schema",
-        json_schema: zodToJsonSchema(schema as any),
+        json_schema: zodToJsonSchema(schema),
       } : undefined,
       temperature: 0,
-    }) as any;
+    });
 
     this.logger?.({ category: "workersai", message: "Workers AI finished thinking!" });
-    return { data: result.response } as T;
+    return { data: (result as any).response } as T;
   }
 
   async createChatCompletion<T>({ options }: CreateChatCompletionOptions): Promise<T> {
