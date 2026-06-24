@@ -32,9 +32,9 @@ interface LLMResponse {
   text?: string;
 }
 
-const dnsCache = new Map<string, boolean>();
-
 export class ShopperAgent extends Agent<Env, ShopperState> {
+  private dnsCache = new Map<string, boolean>();
+
   // Define initial state
   initialState: ShopperState = {
     persona: "A cautious tech buyer looking for a good laptop or accessory",
@@ -101,8 +101,8 @@ export class ShopperAgent extends Agent<Env, ShopperState> {
       }
 
       // Check cache before resolving DNS
-      if (dnsCache.has(hostname)) {
-        return dnsCache.get(hostname)!;
+      if (this.dnsCache.has(hostname)) {
+        return this.dnsCache.get(hostname)!;
       }
 
       // Otherwise, resolve the domain name to A/AAAA records
@@ -136,13 +136,13 @@ export class ShopperAgent extends Agent<Env, ShopperState> {
         if (ipaddr.isValid(record.data)) {
           if (this.isPrivateIp(record.data)) {
             console.warn(`DNS resolution for ${hostname} returned a private IP: ${record.data}`);
-            dnsCache.set(hostname, false);
+            this.dnsCache.set(hostname, false);
             return false;
           }
         }
       }
 
-      dnsCache.set(hostname, true);
+      this.dnsCache.set(hostname, true);
       return true;
     } catch (urlParseErr) {
       console.warn("Ignored URL parsing error in isSafeUrl:", urlParseErr);
