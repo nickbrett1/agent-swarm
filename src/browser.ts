@@ -113,6 +113,30 @@ function findNewestPage(context: any, currentPage: any): any {
   return currentPage;
 }
 
+async function handlePatchedFetch(browser: any, originalFetch: Function, request: any, init?: any) {
+  let urlStr = getFetchUrlString(request);
+  const method = getFetchMethod(request, init);
+
+  const stripped = stripFetchQueryParameters(request, urlStr, method);
+  request = stripped.newRequest;
+  urlStr = stripped.newUrlStr;
+
+  console.log(`[MYBROWSER.fetch] request: ${urlStr} [${method}]`);
+  try {
+    const response = await originalFetch.call(browser, request, init);
+    if (urlStr.includes("/v1/devtools/browser/") && method.toUpperCase() !== "DELETE" && !response.webSocket) {
+      const status = response.status;
+      const text = await response.text().catch(() => "");
+      console.error(`[MYBROWSER.fetch] WebSocket upgrade failed. Status: ${status}, Body: ${text}`);
+      throw new Error(`WebSocket upgrade failed: status ${status}, message: ${text}`);
+    }
+    return response;
+  } catch (err) {
+    console.error("[MYBROWSER.fetch] Error during fetch:", err);
+    throw err;
+  }
+}
+
 function patchBrowserFetch() {
   try {
     const wEnv = workersEnv as any;
@@ -124,27 +148,7 @@ function patchBrowserFetch() {
         console.log("Attempting to patch browser.fetch directly...");
         const patchedFetch = Object.assign(
           async function(request: any, init?: any) {
-            let urlStr = getFetchUrlString(request);
-            const method = getFetchMethod(request, init);
-
-            const stripped = stripFetchQueryParameters(request, urlStr, method);
-            request = stripped.newRequest;
-            urlStr = stripped.newUrlStr;
-
-            console.log(`[MYBROWSER.fetch] request: ${urlStr} [${method}]`);
-            try {
-              const response = await originalFetch.call(browser, request, init);
-              if (urlStr.includes("/v1/devtools/browser/") && method.toUpperCase() !== "DELETE" && !response.webSocket) {
-                const status = response.status;
-                const text = await response.text().catch(() => "");
-                console.error(`[MYBROWSER.fetch] WebSocket upgrade failed. Status: ${status}, Body: ${text}`);
-                throw new Error(`WebSocket upgrade failed: status ${status}, message: ${text}`);
-              }
-              return response;
-            } catch (err) {
-              console.error("[MYBROWSER.fetch] Error during fetch:", err);
-              throw err;
-            }
+            return handlePatchedFetch(browser, originalFetch, request, init);
           },
           { __isPatched: true }
         );
