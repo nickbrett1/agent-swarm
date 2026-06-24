@@ -548,7 +548,7 @@ ${textSummary}
       } else {
         const textResponse = rawResponse as string;
         let cleanText = textResponse.trim();
-        const match = cleanText.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/);
+        const match = cleanText.match(/^```(?:json)?([\s\S]*?)```$/);
         if (match) {
           cleanText = match[1].trim();
         }
