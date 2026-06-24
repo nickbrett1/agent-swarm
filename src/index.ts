@@ -587,10 +587,26 @@ export async function verifyHmacSignature(
     }
 
     const encoder = new TextEncoder();
-    const key = await crypto.subtle.importKey(
+
+    // First import the raw secret as key material for PBKDF2
+    const keyMaterial = await crypto.subtle.importKey(
       'raw',
       encoder.encode(secret),
-      { name: 'HMAC', hash: 'SHA-256' },
+      { name: 'PBKDF2' },
+      false,
+      ['deriveKey']
+    );
+
+    // Derive a strong 256-bit key for HMAC using PBKDF2
+    const key = await crypto.subtle.deriveKey(
+      {
+        name: 'PBKDF2',
+        salt: encoder.encode('agent-swarm-salt'),
+        iterations: 100000,
+        hash: 'SHA-256'
+      },
+      keyMaterial,
+      { name: 'HMAC', hash: 'SHA-256', length: 256 },
       false,
       ['verify']
     );

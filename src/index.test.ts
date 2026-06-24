@@ -284,10 +284,22 @@ describe('verifyHmacSignature', () => {
 
   async function generateTestSignature(expiryStr: string, overrideSecret = secret) {
     const encoder = new TextEncoder();
-    const key = await crypto.subtle.importKey(
+    const keyMaterial = await crypto.subtle.importKey(
       'raw',
       encoder.encode(overrideSecret),
-      { name: 'HMAC', hash: 'SHA-256' },
+      { name: 'PBKDF2' },
+      false,
+      ['deriveKey']
+    );
+    const key = await crypto.subtle.deriveKey(
+      {
+        name: 'PBKDF2',
+        salt: encoder.encode('agent-swarm-salt'),
+        iterations: 100000,
+        hash: 'SHA-256'
+      },
+      keyMaterial,
+      { name: 'HMAC', hash: 'SHA-256', length: 256 },
       false,
       ['sign']
     );
