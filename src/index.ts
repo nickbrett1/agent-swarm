@@ -474,20 +474,10 @@ ${textSummary}
           },
           body: JSON.stringify({
             systemInstruction: {
-              parts: [
-                {
-                  text: systemPrompt
-                }
-              ]
+              parts: [{ text: systemPrompt }]
             },
             contents: [
-              {
-                parts: [
-                  {
-                    text: userPrompt
-                  }
-                ]
-              }
+              { parts: [{ text: userPrompt }] }
             ],
             generationConfig: {
               responseMimeType: "application/json"
@@ -517,89 +507,88 @@ ${textSummary}
         }
       }
     }
-    throw new Error("Gemini API call failed after max retries");
+    throw new Error("Gemini API call failed");
   }
 
-  private parseWorkersAIResponse(rawResponse: unknown): LLMResponse {
-    if (typeof rawResponse === "object" && rawResponse !== null) {
-      return rawResponse as unknown as LLMResponse;
-    }
-
-    const textResponse = rawResponse as string;
-    let cleanText = textResponse.trim();
-    const match = cleanText.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/);
-    if (match) {
-      cleanText = match[1].trim();
-    }
-
-    try {
-      return JSON.parse(cleanText) as LLMResponse;
-    } catch (parseErr) {
-      console.error("Failed to parse LLM response as JSON. Raw response was:", textResponse);
-      throw new Error(`LLM output parsing error: ${parseErr}`);
-    }
-  }
-
-  private async queryWorkersAI(systemPrompt: string, userPrompt: string, geminiError: unknown): Promise<LLMResponse> {
+  private async queryWorkersAI(systemPrompt: string, userPrompt: string): Promise<LLMResponse> {
     if (!this.env.AI) {
-      if (geminiError) {
-        throw geminiError;
-      }
-      throw new Error("No LLM keys or Workers AI binding available");
+      throw new Error("No Workers AI binding available");
     }
 
     console.log("Calling Workers AI Llama model...");
     const model = "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
     
+    const response = await this.env.AI.run(model, {
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt }
+      ]
+    }, {
+      gateway: {
+        id: "default"
+      }
+    });
+
+    const aiResponse = response as Record<string, unknown>;
+    console.log("Workers AI Llama raw response type:", typeof response, "keys:", Object.keys(aiResponse), "stringified:", JSON.stringify(aiResponse));
+
+    const rawResponse = aiResponse.response || aiResponse.text;
+    if (!rawResponse) {
+      throw new Error("Empty response from Workers AI");
+    }
+
+    let decision: LLMResponse;
+    if (typeof rawResponse === "object" && rawResponse !== null) {
+      decision = rawResponse as unknown as LLMResponse;
+    } else {
+      const textResponse = rawResponse as string;
+      let cleanText = textResponse.trim();
+      if (cleanText.startsWith("```")) {
+        const firstLineBreak = cleanText.indexOf("\n");
+        if (firstLineBreak !== -1) {
+          const lastCodeBlock = cleanText.lastIndexOf("```");
+          if (lastCodeBlock > firstLineBreak) {
+            cleanText = cleanText.substring(firstLineBreak + 1, lastCodeBlock).trim();
+          }
+        }
+      }
+      try {
+        decision = JSON.parse(cleanText) as LLMResponse;
+      } catch (parseErr) {
+        console.error("Failed to parse LLM response as JSON. Raw response was:", textResponse);
+        throw new Error(`LLM output parsing error: ${parseErr}`);
+      }
+    }
+
+    return decision;
+  }
+
+  /**
+   * Queries either the Gemini API (if key is present) or falls back to Workers AI.
+   */
+  private async queryLLM(systemPrompt: string, userPrompt: string): Promise<LLMResponse> {
+    let geminiError: unknown = null;
+    const apiKey = this.env.GOOGLE_API_KEY || this.env.GEMINI_API_KEY;
+
+    if (apiKey) {
+      try {
+        return await this.queryGemini(apiKey, systemPrompt, userPrompt);
+      } catch (err) {
+        geminiError = err;
+      }
+    }
+
+    // Fallback: Workers AI
     try {
-      const response = await this.env.AI.run(model, {
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userPrompt }
-        ]
-      }, {
-        gateway: {
-          id: "default"
-        }
-      });
-
-      const aiResponse = response as Record<string, unknown>;
-      console.log("Workers AI Llama raw response type:", typeof response, "keys:", Object.keys(aiResponse), "stringified:", JSON.stringify(aiResponse));
-      
-      const rawResponse = aiResponse.response || aiResponse.text;
-      if (!rawResponse) {
-        throw new Error("Empty response from Workers AI");
-      }
-
-      let decision: LLMResponse;
-      if (typeof rawResponse === "object" && rawResponse !== null) {
-        decision = rawResponse as unknown as LLMResponse;
-      } else {
-        const textResponse = rawResponse as string;
-        let cleanText = textResponse.trim();
-        if (cleanText.startsWith("```")) {
-          cleanText = cleanText.slice(3).trim();
-          if (cleanText.toLowerCase().startsWith("json")) {
-            cleanText = cleanText.slice(4).trim();
-          }
-          if (cleanText.endsWith("```")) {
-            cleanText = cleanText.slice(0, -3).trim();
-          }
-        }
-        try {
-          decision = JSON.parse(cleanText) as LLMResponse;
-        } catch (parseErr) {
-          console.error("Failed to parse LLM response as JSON. Raw response was:", textResponse);
-          throw new Error(`LLM output parsing error: ${parseErr}`);
-        }
-      }
-
-      return decision;
+      return await this.queryWorkersAI(systemPrompt, userPrompt);
     } catch (err: unknown) {
       if (geminiError) {
         const errMessage = err instanceof Error ? err.message : String(err);
         const geminiMessage = geminiError instanceof Error ? geminiError.message : String(geminiError);
         throw new Error(`Workers AI fallback failed: ${errMessage}. (Gemini API also failed: ${geminiMessage})`);
+      }
+      if (!this.env.AI) {
+        throw new Error("No LLM keys or Workers AI binding available");
       }
       throw err;
     }
@@ -687,14 +676,14 @@ export async function verifyHmacSignature(
   }
 }
 
-const ALLOWED_ORIGINS = ["https://fintechnick.com", "http://localhost:3000"];
+const ALLOWED_ORIGINS = ["https://fintechnick.com", "https://localhost:3000"];
 
 function getCorsOrigin(request: Request): string {
   const origin = request.headers.get("Origin");
   if (origin && ALLOWED_ORIGINS.includes(origin)) {
     return origin;
   }
-  return ALLOWED_ORIGINS[0];
+  return "";
 }
 
 function getBrowserTimeLimit(env: Env, limits: any): any {
