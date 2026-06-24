@@ -250,12 +250,7 @@ export class ShopperAgent extends Agent<Env, ShopperState> {
     return { finished: false };
   }
 
-  /**
-   * RPC Endpoint to trigger a shopping run.
-   */
-  // @ts-ignore
-  @callable()
-  async runShopping(persona: string, url?: string): Promise<string> {
+  private async initializeShoppingSession(persona: string, url?: string): Promise<string> {
     this.setState({
       persona,
       history: [],
@@ -275,128 +270,148 @@ export class ShopperAgent extends Agent<Env, ShopperState> {
       });
       throw new Error(errorMsg);
     }
+    
+    return targetUrl;
+  }
+
+  private async executeShoppingLoop(helper: StagehandBrowserHelper, persona: string): Promise<string> {
+    const maxSteps = 12;
+    let step = 0;
+    let finished = false;
+    let outcomeSummary = "";
+
+    while (step < maxSteps && !finished) {
+      step++;
+      
+      // Check if the current URL is a success/thank-you/complete page
+      const currentUrl = await helper.getPageUrl();
+      const lowerUrl = currentUrl.toLowerCase();
+      if (lowerUrl.includes("success") ||
+          lowerUrl.includes("thank") ||
+          lowerUrl.includes("complete") ||
+          lowerUrl.includes("confirm") ||
+          lowerUrl.includes("receipt") ||
+          lowerUrl.includes("order")) {
+        console.log(JSON.stringify({ message: "Success page detected. Finishing shopping run.", url: currentUrl }));
+        finished = true;
+        outcomeSummary = `Successfully completed purchase. Redirected to: ${currentUrl}`;
+        this.setState({ ...this.state, status: "completed" });
+        break;
+      }
+
+      // 1. Get current page elements
+      const pageData = await helper.getInteractiveElements();
+      console.log(JSON.stringify({
+        step,
+        url: currentUrl,
+        interactiveNodesCount: pageData.elements.length
+      }));
+
+      // 2. Build the LLM prompt
+      const { systemPrompt, userPrompt } = this.buildLLMPrompt(persona, pageData.textSummary, this.state.history);
+
+      // 3. Query LLM (Gemini or Workers AI)
+      const decision = await this.queryLLM(systemPrompt, userPrompt);
+
+      // Filter sensitive data before logging
+      const logDecision = { ...decision };
+      if (logDecision.text) {
+        logDecision.text = "***REDACTED***";
+      }
+      console.log(JSON.stringify({ message: "LLM Decision", decision: logDecision }));
+
+      const actionLog = `Step ${step}: ${decision.explanation} -> Action: ${decision.action}${decision.targetId ? ' on ' + decision.targetId : ''}${decision.text ? ' value="***REDACTED***"' : ''}`;
+      this.setState({
+        ...this.state,
+        history: [...this.state.history, actionLog]
+      });
+
+      // 4. Execute Action
+      const actionResult = await this.handleAction(decision, helper, pageData);
+      if (actionResult.finished) {
+        finished = true;
+        if (actionResult.outcomeSummary) {
+          outcomeSummary = actionResult.outcomeSummary;
+        }
+        this.setState({ ...this.state, status: "completed" });
+      }
+
+      // Small cooldown between actions
+      await helper.wait(100);
+    }
+
+    if (!finished) {
+      outcomeSummary = `Reached maximum action limit (${maxSteps} steps) without finishing.`;
+      this.setState({ ...this.state, status: "failed", lastError: outcomeSummary });
+      throw new Error(outcomeSummary);
+    }
+
+    return outcomeSummary;
+  }
+
+  private handleShoppingError(err: unknown): string {
+    console.error("Error during shopping execution:", err);
+
+    const errMsg = err instanceof Error ? err.message : String(err);
+    const isBrowserClosedErr = errMsg.toLowerCase().includes("closed") ||
+                               errMsg.toLowerCase().includes("connection lost") ||
+                               errMsg.toLowerCase().includes("detached") ||
+                               errMsg.toLowerCase().includes("lost");
+
+    const hasClickedPay = this.state.history.some(log =>
+      log.toLowerCase().includes("action: click") &&
+      (log.toLowerCase().includes("pay") ||
+       log.toLowerCase().includes("submit") ||
+       log.toLowerCase().includes("complete") ||
+       log.toLowerCase().includes("buy") ||
+       log.toLowerCase().includes("button_14") ||
+       log.toLowerCase().includes("button_12") ||
+       log.toLowerCase().includes("button_45"))
+    );
+
+    if (isBrowserClosedErr && hasClickedPay) {
+      console.log("Browser disconnected/closed after submitting payment. Marking shopping run as completed successfully.");
+      const outcomeSummary = "Successfully completed purchase. Browser session closed during redirect/settle.";
+      this.setState({
+        ...this.state,
+        status: "completed"
+      });
+      return `Shopping Session Finished. Status: completed. Summary: ${outcomeSummary}`;
+    } else {
+      this.setState({
+        ...this.state,
+        status: "failed",
+        lastError: errMsg
+      });
+      throw err;
+    }
+  }
+
+  /**
+   * RPC Endpoint to trigger a shopping run.
+   */
+  // @ts-ignore
+  @callable()
+  async runShopping(persona: string, url?: string): Promise<string> {
+    const targetUrl = await this.initializeShoppingSession(persona, url);
 
     const helper = new StagehandBrowserHelper(
       this.env.MYBROWSER,
       this.env.AI,
       this.env.GOOGLE_API_KEY || this.env.GEMINI_API_KEY
     );
-    
+
     const browserStartTime = Date.now();
     let resultString = "";
+
     try {
       await helper.init();
       await helper.goto(targetUrl);
-      
-      const maxSteps = 12;
-      let step = 0;
-      let finished = false;
-      let outcomeSummary = "";
 
-      while (step < maxSteps && !finished) {
-        step++;
-        
-        // Check if the current URL is a success/thank-you/complete page
-        const currentUrl = await helper.getPageUrl();
-        const lowerUrl = currentUrl.toLowerCase();
-        if (lowerUrl.includes("success") ||
-            lowerUrl.includes("thank") ||
-            lowerUrl.includes("complete") ||
-            lowerUrl.includes("confirm") ||
-            lowerUrl.includes("receipt") ||
-            lowerUrl.includes("order")) {
-          console.log(JSON.stringify({ message: "Success page detected. Finishing shopping run.", url: currentUrl }));
-          finished = true;
-          outcomeSummary = `Successfully completed purchase. Redirected to: ${currentUrl}`;
-          this.setState({ ...this.state, status: "completed" });
-          break;
-        }
-
-        // 1. Get current page elements
-        const pageData = await helper.getInteractiveElements();
-        console.log(JSON.stringify({
-          step,
-          url: currentUrl,
-          interactiveNodesCount: pageData.elements.length
-        }));
-
-        // 2. Build the LLM prompt
-        const { systemPrompt, userPrompt } = this.buildLLMPrompt(persona, pageData.textSummary, this.state.history);
-
-        // 3. Query LLM (Gemini or Workers AI)
-        const decision = await this.queryLLM(systemPrompt, userPrompt);
-
-        // Filter sensitive data before logging
-        const logDecision = { ...decision };
-        if (logDecision.text) {
-          logDecision.text = "***REDACTED***";
-        }
-        console.log(JSON.stringify({ message: "LLM Decision", decision: logDecision }));
-
-        const actionLog = `Step ${step}: ${decision.explanation} -> Action: ${decision.action}${decision.targetId ? ' on ' + decision.targetId : ''}${decision.text ? ' value="***REDACTED***"' : ''}`;
-        this.setState({
-          ...this.state,
-          history: [...this.state.history, actionLog]
-        });
-
-        // 4. Execute Action
-        const actionResult = await this.handleAction(decision, helper, pageData);
-        if (actionResult.finished) {
-          finished = true;
-          if (actionResult.outcomeSummary) {
-            outcomeSummary = actionResult.outcomeSummary;
-          }
-          this.setState({ ...this.state, status: "completed" });
-        }
-
-        // Small cooldown between actions
-        await helper.wait(100);
-      }
-
-      if (!finished) {
-        outcomeSummary = `Reached maximum action limit (${maxSteps} steps) without finishing.`;
-        this.setState({ ...this.state, status: "failed", lastError: outcomeSummary });
-        throw new Error(outcomeSummary);
-      }
-
+      const outcomeSummary = await this.executeShoppingLoop(helper, persona);
       resultString = `Shopping Session Finished. Status: ${this.state.status}. Summary: ${outcomeSummary}`;
-
     } catch (err: unknown) {
-      console.error("Error during shopping execution:", err);
-      
-      const errMsg = err instanceof Error ? err.message : String(err);
-      const isBrowserClosedErr = errMsg.toLowerCase().includes("closed") || 
-                                 errMsg.toLowerCase().includes("connection lost") || 
-                                 errMsg.toLowerCase().includes("detached") ||
-                                 errMsg.toLowerCase().includes("lost");
-                                 
-      const hasClickedPay = this.state.history.some(log => 
-        log.toLowerCase().includes("action: click") && 
-        (log.toLowerCase().includes("pay") || 
-         log.toLowerCase().includes("submit") || 
-         log.toLowerCase().includes("complete") || 
-         log.toLowerCase().includes("buy") || 
-         log.toLowerCase().includes("button_14") || 
-         log.toLowerCase().includes("button_12") ||
-         log.toLowerCase().includes("button_45"))
-      );
-      
-      if (isBrowserClosedErr && hasClickedPay) {
-        console.log("Browser disconnected/closed after submitting payment. Marking shopping run as completed successfully.");
-        const outcomeSummary = "Successfully completed purchase. Browser session closed during redirect/settle.";
-        this.setState({
-          ...this.state,
-          status: "completed"
-        });
-        resultString = `Shopping Session Finished. Status: completed. Summary: ${outcomeSummary}`;
-      } else {
-        this.setState({
-          ...this.state,
-          status: "failed",
-          lastError: errMsg
-        });
-        throw err;
-      }
+      resultString = this.handleShoppingError(err);
     } finally {
       await helper.close();
       const browserDurationSeconds = ((Date.now() - browserStartTime) / 1000).toFixed(1);
