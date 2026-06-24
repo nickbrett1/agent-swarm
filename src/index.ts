@@ -593,25 +593,6 @@ ${textSummary}
       throw err;
     }
   }
-
-  /**
-   * Queries either the Gemini API (if key is present) or falls back to Workers AI.
-   */
-  private async queryLLM(systemPrompt: string, userPrompt: string): Promise<LLMResponse> {
-    let geminiError: unknown = null;
-    const apiKey = this.env.GOOGLE_API_KEY || this.env.GEMINI_API_KEY;
-
-    if (apiKey) {
-      try {
-        return await this.queryGemini(apiKey, systemPrompt, userPrompt);
-      } catch (err: unknown) {
-        geminiError = err;
-      }
-    }
-
-    // Fallback: Workers AI
-    return await this.queryWorkersAI(systemPrompt, userPrompt, geminiError);
-  }
 }
 
 // Helper to verify the SvelteKit HMAC signature
