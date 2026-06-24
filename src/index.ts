@@ -275,6 +275,34 @@ export class ShopperAgent extends Agent<Env, ShopperState> {
     return targetUrl;
   }
 
+  private isSuccessUrl(url: string): boolean {
+    const lowerUrl = url.toLowerCase();
+    return lowerUrl.includes("success") ||
+           lowerUrl.includes("thank") ||
+           lowerUrl.includes("complete") ||
+           lowerUrl.includes("confirm") ||
+           lowerUrl.includes("receipt") ||
+           lowerUrl.includes("order");
+  }
+
+  private logDecisionAndHistory(step: number, decision: LLMResponse): void {
+    // Filter sensitive data before logging
+    const logDecision = { ...decision };
+    if (logDecision.text) {
+      logDecision.text = "***REDACTED***";
+    }
+    console.log(JSON.stringify({ message: "LLM Decision", decision: logDecision }));
+
+    const targetPart = decision.targetId ? ` on ${decision.targetId}` : '';
+    const textPart = decision.text ? ' value="***REDACTED***"' : '';
+    const actionLog = `Step ${step}: ${decision.explanation} -> Action: ${decision.action}${targetPart}${textPart}`;
+
+    this.setState({
+      ...this.state,
+      history: [...this.state.history, actionLog]
+    });
+  }
+
   private async executeShoppingLoop(helper: StagehandBrowserHelper, persona: string): Promise<string> {
     const maxSteps = 12;
     let step = 0;
@@ -286,13 +314,7 @@ export class ShopperAgent extends Agent<Env, ShopperState> {
       
       // Check if the current URL is a success/thank-you/complete page
       const currentUrl = await helper.getPageUrl();
-      const lowerUrl = currentUrl.toLowerCase();
-      if (lowerUrl.includes("success") ||
-          lowerUrl.includes("thank") ||
-          lowerUrl.includes("complete") ||
-          lowerUrl.includes("confirm") ||
-          lowerUrl.includes("receipt") ||
-          lowerUrl.includes("order")) {
+      if (this.isSuccessUrl(currentUrl)) {
         console.log(JSON.stringify({ message: "Success page detected. Finishing shopping run.", url: currentUrl }));
         finished = true;
         outcomeSummary = `Successfully completed purchase. Redirected to: ${currentUrl}`;
@@ -314,18 +336,7 @@ export class ShopperAgent extends Agent<Env, ShopperState> {
       // 3. Query LLM (Gemini or Workers AI)
       const decision = await this.queryLLM(systemPrompt, userPrompt);
 
-      // Filter sensitive data before logging
-      const logDecision = { ...decision };
-      if (logDecision.text) {
-        logDecision.text = "***REDACTED***";
-      }
-      console.log(JSON.stringify({ message: "LLM Decision", decision: logDecision }));
-
-      const actionLog = `Step ${step}: ${decision.explanation} -> Action: ${decision.action}${decision.targetId ? ' on ' + decision.targetId : ''}${decision.text ? ' value="***REDACTED***"' : ''}`;
-      this.setState({
-        ...this.state,
-        history: [...this.state.history, actionLog]
-      });
+      this.logDecisionAndHistory(step, decision);
 
       // 4. Execute Action
       const actionResult = await this.handleAction(decision, helper, pageData);
@@ -510,6 +521,31 @@ ${textSummary}
     throw new Error("Gemini API call failed");
   }
 
+  private parseWorkersAIResponse(rawResponse: string | object): LLMResponse {
+    if (typeof rawResponse === "object" && rawResponse !== null) {
+      return rawResponse as unknown as LLMResponse;
+    }
+
+    const textResponse = rawResponse as string;
+    let cleanText = textResponse.trim();
+    if (cleanText.startsWith("```")) {
+      const firstLineBreak = cleanText.indexOf("\n");
+      if (firstLineBreak !== -1) {
+        const lastCodeBlock = cleanText.lastIndexOf("```");
+        if (lastCodeBlock > firstLineBreak) {
+          cleanText = cleanText.substring(firstLineBreak + 1, lastCodeBlock).trim();
+        }
+      }
+    }
+
+    try {
+      return JSON.parse(cleanText) as LLMResponse;
+    } catch (parseErr) {
+      console.error("Failed to parse LLM response as JSON. Raw response was:", textResponse);
+      throw new Error(`LLM output parsing error: ${parseErr}`);
+    }
+  }
+
   private async queryWorkersAI(systemPrompt: string, userPrompt: string): Promise<LLMResponse> {
     if (!this.env.AI) {
       throw new Error("No Workers AI binding available");
@@ -537,30 +573,7 @@ ${textSummary}
       throw new Error("Empty response from Workers AI");
     }
 
-    let decision: LLMResponse;
-    if (typeof rawResponse === "object" && rawResponse !== null) {
-      decision = rawResponse as unknown as LLMResponse;
-    } else {
-      const textResponse = rawResponse as string;
-      let cleanText = textResponse.trim();
-      if (cleanText.startsWith("```")) {
-        const firstLineBreak = cleanText.indexOf("\n");
-        if (firstLineBreak !== -1) {
-          const lastCodeBlock = cleanText.lastIndexOf("```");
-          if (lastCodeBlock > firstLineBreak) {
-            cleanText = cleanText.substring(firstLineBreak + 1, lastCodeBlock).trim();
-          }
-        }
-      }
-      try {
-        decision = JSON.parse(cleanText) as LLMResponse;
-      } catch (parseErr) {
-        console.error("Failed to parse LLM response as JSON. Raw response was:", textResponse);
-        throw new Error(`LLM output parsing error: ${parseErr}`);
-      }
-    }
-
-    return decision;
+    return this.parseWorkersAIResponse(rawResponse as string | object);
   }
 
   /**
@@ -594,24 +607,6 @@ ${textSummary}
     }
   }
 
-  /**
-   * Queries either the Gemini API (if key is present) or falls back to Workers AI.
-   */
-  private async queryLLM(systemPrompt: string, userPrompt: string): Promise<LLMResponse> {
-    let geminiError: unknown = null;
-    const apiKey = this.env.GOOGLE_API_KEY || this.env.GEMINI_API_KEY;
-
-    if (apiKey) {
-      try {
-        return await this.queryGemini(apiKey, systemPrompt, userPrompt);
-      } catch (err: unknown) {
-        geminiError = err;
-      }
-    }
-
-    // Fallback: Workers AI
-    return await this.queryWorkersAI(systemPrompt, userPrompt, geminiError);
-  }
 }
 
 // Helper to verify the SvelteKit HMAC signature
@@ -676,11 +671,11 @@ export async function verifyHmacSignature(
   }
 }
 
-const ALLOWED_ORIGINS = ["https://fintechnick.com", "https://localhost:3000"];
+const ALLOWED_ORIGINS = new Set(["https://fintechnick.com", "https://localhost:3000"]);
 
 function getCorsOrigin(request: Request): string {
   const origin = request.headers.get("Origin");
-  if (origin && ALLOWED_ORIGINS.includes(origin)) {
+  if (origin && ALLOWED_ORIGINS.has(origin)) {
     return origin;
   }
   return "";
