@@ -624,7 +624,7 @@ function getCorsOrigin(request: Request): string {
   if (origin && ALLOWED_ORIGINS.includes(origin)) {
     return origin;
   }
-  return ALLOWED_ORIGINS[0];
+  return "";
 }
 
 function getBrowserTimeLimit(env: Env, limits: any): any {
