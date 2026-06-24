@@ -102,7 +102,8 @@ export class ShopperAgent extends Agent<Env, ShopperState> {
       const resolveDns = async (type: string) => {
         try {
           const response = await fetch(`https://cloudflare-dns.com/dns-query?name=${hostname}&type=${type}`, {
-            headers: { 'accept': 'application/dns-json' }
+            headers: { 'accept': 'application/dns-json' },
+            signal: AbortSignal.timeout(5000)
           });
           if (!response.ok) return [];
           const data = await response.json() as { Answer?: Array<{ type: number, data: string }> };
@@ -576,12 +577,14 @@ ${textSummary}
       } else {
         const textResponse = rawResponse as string;
         let cleanText = textResponse.trim();
-        if (cleanText.startsWith("```") && cleanText.endsWith("```")) {
-          let startIndex = 3;
-          if (cleanText.substring(3).startsWith("json")) {
-            startIndex += 4;
+        if (cleanText.startsWith("```")) {
+          cleanText = cleanText.slice(3).trim();
+          if (cleanText.toLowerCase().startsWith("json")) {
+            cleanText = cleanText.slice(4).trim();
           }
-          cleanText = cleanText.substring(startIndex, cleanText.length - 3).trim();
+          if (cleanText.endsWith("```")) {
+            cleanText = cleanText.slice(0, -3).trim();
+          }
         }
         try {
           decision = JSON.parse(cleanText) as LLMResponse;

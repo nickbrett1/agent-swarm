@@ -62,32 +62,32 @@ async function fillStripeLocators(frames: any[], card: string, expiry: string, c
   let cvcFilled = false;
   let nameFilled = false;
 
-  const stripeCardSelectorsJoined = STRIPE_CARD_SELECTORS.join(',');
-  const stripeExpirySelectorsJoined = STRIPE_EXPIRY_SELECTORS.join(',');
-  const stripeCvcSelectorsJoined = STRIPE_CVC_SELECTORS.join(',');
-  const stripeNameSelectorsJoined = STRIPE_NAME_SELECTORS.join(',');
+  const cardSelector = STRIPE_CARD_SELECTORS.join(',');
+  const expirySelector = STRIPE_EXPIRY_SELECTORS.join(',');
+  const cvcSelector = STRIPE_CVC_SELECTORS.join(',');
+  const nameSelector = STRIPE_NAME_SELECTORS.join(',');
 
   for (const frame of frames) {
     try {
-      const cardLoc = frame.locator(stripeCardSelectorsJoined);
+      const cardLoc = frame.locator(cardSelector);
       if (await cardLoc.count() > 0) {
         await cardLoc.first().fill(card);
         cardFilled = true;
       }
 
-      const expiryLoc = frame.locator(stripeExpirySelectorsJoined);
+      const expiryLoc = frame.locator(expirySelector);
       if (await expiryLoc.count() > 0) {
         await expiryLoc.first().fill(expiry);
         expiryFilled = true;
       }
 
-      const cvcLoc = frame.locator(stripeCvcSelectorsJoined);
+      const cvcLoc = frame.locator(cvcSelector);
       if (await cvcLoc.count() > 0) {
         await cvcLoc.first().fill(cvc);
         cvcFilled = true;
       }
 
-      const nameLoc = frame.locator(stripeNameSelectorsJoined);
+      const nameLoc = frame.locator(nameSelector);
       if (await nameLoc.count() > 0) {
         await nameLoc.first().fill(name);
         nameFilled = true;
