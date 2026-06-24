@@ -32,6 +32,8 @@ interface LLMResponse {
   text?: string;
 }
 
+const dnsCache = new Map<string, boolean>();
+
 export class ShopperAgent extends Agent<Env, ShopperState> {
   // Define initial state
   initialState: ShopperState = {
@@ -98,6 +100,11 @@ export class ShopperAgent extends Agent<Env, ShopperState> {
         return !this.isPrivateIp(hostname);
       }
 
+      // Check cache before resolving DNS
+      if (dnsCache.has(hostname)) {
+        return dnsCache.get(hostname)!;
+      }
+
       // Otherwise, resolve the domain name to A/AAAA records
       const resolveDns = async (type: string) => {
         try {
@@ -129,11 +136,13 @@ export class ShopperAgent extends Agent<Env, ShopperState> {
         if (ipaddr.isValid(record.data)) {
           if (this.isPrivateIp(record.data)) {
             console.warn(`DNS resolution for ${hostname} returned a private IP: ${record.data}`);
+            dnsCache.set(hostname, false);
             return false;
           }
         }
       }
 
+      dnsCache.set(hostname, true);
       return true;
     } catch (urlParseErr) {
       console.warn("Ignored URL parsing error in isSafeUrl:", urlParseErr);
