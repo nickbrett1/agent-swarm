@@ -547,9 +547,14 @@ ${textSummary}
       } else {
         const textResponse = rawResponse as string;
         let cleanText = textResponse.trim();
-        const match = cleanText.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/);
-        if (match) {
-          cleanText = match[1].trim();
+        if (cleanText.startsWith("```")) {
+          const firstLineBreak = cleanText.indexOf("\n");
+          if (firstLineBreak !== -1) {
+            const lastCodeBlock = cleanText.lastIndexOf("```");
+            if (lastCodeBlock > firstLineBreak) {
+              cleanText = cleanText.substring(firstLineBreak + 1, lastCodeBlock).trim();
+            }
+          }
         }
         try {
           decision = JSON.parse(cleanText) as LLMResponse;
@@ -617,7 +622,7 @@ export async function verifyHmacSignature(
   }
 }
 
-const ALLOWED_ORIGINS = ["https://fintechnick.com", "http://localhost:3000"];
+const ALLOWED_ORIGINS = ["https://fintechnick.com", "https://localhost:3000"];
 
 function getCorsOrigin(request: Request): string {
   const origin = request.headers.get("Origin");
