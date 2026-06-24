@@ -102,7 +102,8 @@ export class ShopperAgent extends Agent<Env, ShopperState> {
       const resolveDns = async (type: string) => {
         try {
           const response = await fetch(`https://cloudflare-dns.com/dns-query?name=${hostname}&type=${type}`, {
-            headers: { 'accept': 'application/dns-json' }
+            headers: { 'accept': 'application/dns-json' },
+            signal: AbortSignal.timeout(5000)
           });
           if (!response.ok) return [];
           const data = await response.json() as { Answer?: Array<{ type: number, data: string }> };
