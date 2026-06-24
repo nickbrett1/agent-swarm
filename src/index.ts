@@ -169,7 +169,7 @@ export class ShopperAgent extends Agent<Env, ShopperState> {
     }
     const element = pageData.elements.find((e: any) => e.id === decision.targetId);
     let isPayOrSubmit = false;
-    if (element && element.text) {
+    if (element?.text) {
       const lowerText = element.text.toLowerCase();
       isPayOrSubmit = lowerText.includes("pay") ||
         lowerText.includes("submit") ||
@@ -275,6 +275,70 @@ export class ShopperAgent extends Agent<Env, ShopperState> {
     return targetUrl;
   }
 
+  private async processSingleShoppingStep(
+    helper: StagehandBrowserHelper,
+    persona: string,
+    step: number
+  ): Promise<{ finished: boolean; outcomeSummary: string; currentUrl: string }> {
+    // Check if the current URL is a success/thank-you/complete page
+    const currentUrl = await helper.getPageUrl();
+    const lowerUrl = currentUrl.toLowerCase();
+    if (lowerUrl.includes("success") ||
+        lowerUrl.includes("thank") ||
+        lowerUrl.includes("complete") ||
+        lowerUrl.includes("confirm") ||
+        lowerUrl.includes("receipt") ||
+        lowerUrl.includes("order")) {
+      console.log(JSON.stringify({ message: "Success page detected. Finishing shopping run.", url: currentUrl }));
+      const outcomeSummary = `Successfully completed purchase. Redirected to: ${currentUrl}`;
+      this.setState({ ...this.state, status: "completed" });
+      return { finished: true, outcomeSummary, currentUrl };
+    }
+
+    // 1. Get current page elements
+    const pageData = await helper.getInteractiveElements();
+    console.log(JSON.stringify({
+      step,
+      url: currentUrl,
+      interactiveNodesCount: pageData.elements.length
+    }));
+
+    // 2. Build the LLM prompt
+    const { systemPrompt, userPrompt } = this.buildLLMPrompt(persona, pageData.textSummary, this.state.history);
+
+    // 3. Query LLM (Gemini or Workers AI)
+    const decision = await this.queryLLM(systemPrompt, userPrompt);
+
+    // Filter sensitive data before logging
+    const logDecision = { ...decision };
+    if (logDecision.text) {
+      logDecision.text = "***REDACTED***";
+    }
+    console.log(JSON.stringify({ message: "LLM Decision", decision: logDecision }));
+
+    const actionLog = `Step ${step}: ${decision.explanation} -> Action: ${decision.action}${decision.targetId ? ' on ' + decision.targetId : ''}${decision.text ? ' value="***REDACTED***"' : ''}`;
+    this.setState({
+      ...this.state,
+      history: [...this.state.history, actionLog]
+    });
+
+    // 4. Execute Action
+    const actionResult = await this.handleAction(decision, helper, pageData);
+    let outcomeSummary = "";
+    if (actionResult.finished) {
+      if (actionResult.outcomeSummary) {
+        outcomeSummary = actionResult.outcomeSummary;
+      }
+      this.setState({ ...this.state, status: "completed" });
+      return { finished: true, outcomeSummary, currentUrl };
+    }
+
+    // Small cooldown between actions
+    await helper.wait(100);
+
+    return { finished: false, outcomeSummary: "", currentUrl };
+  }
+
   private async executeShoppingLoop(helper: StagehandBrowserHelper, persona: string): Promise<string> {
     const maxSteps = 12;
     let step = 0;
@@ -283,62 +347,11 @@ export class ShopperAgent extends Agent<Env, ShopperState> {
 
     while (step < maxSteps && !finished) {
       step++;
-      
-      // Check if the current URL is a success/thank-you/complete page
-      const currentUrl = await helper.getPageUrl();
-      const lowerUrl = currentUrl.toLowerCase();
-      if (lowerUrl.includes("success") ||
-          lowerUrl.includes("thank") ||
-          lowerUrl.includes("complete") ||
-          lowerUrl.includes("confirm") ||
-          lowerUrl.includes("receipt") ||
-          lowerUrl.includes("order")) {
-        console.log(JSON.stringify({ message: "Success page detected. Finishing shopping run.", url: currentUrl }));
-        finished = true;
-        outcomeSummary = `Successfully completed purchase. Redirected to: ${currentUrl}`;
-        this.setState({ ...this.state, status: "completed" });
-        break;
+      const result = await this.processSingleShoppingStep(helper, persona, step);
+      finished = result.finished;
+      if (result.outcomeSummary) {
+        outcomeSummary = result.outcomeSummary;
       }
-
-      // 1. Get current page elements
-      const pageData = await helper.getInteractiveElements();
-      console.log(JSON.stringify({
-        step,
-        url: currentUrl,
-        interactiveNodesCount: pageData.elements.length
-      }));
-
-      // 2. Build the LLM prompt
-      const { systemPrompt, userPrompt } = this.buildLLMPrompt(persona, pageData.textSummary, this.state.history);
-
-      // 3. Query LLM (Gemini or Workers AI)
-      const decision = await this.queryLLM(systemPrompt, userPrompt);
-
-      // Filter sensitive data before logging
-      const logDecision = { ...decision };
-      if (logDecision.text) {
-        logDecision.text = "***REDACTED***";
-      }
-      console.log(JSON.stringify({ message: "LLM Decision", decision: logDecision }));
-
-      const actionLog = `Step ${step}: ${decision.explanation} -> Action: ${decision.action}${decision.targetId ? ' on ' + decision.targetId : ''}${decision.text ? ' value="***REDACTED***"' : ''}`;
-      this.setState({
-        ...this.state,
-        history: [...this.state.history, actionLog]
-      });
-
-      // 4. Execute Action
-      const actionResult = await this.handleAction(decision, helper, pageData);
-      if (actionResult.finished) {
-        finished = true;
-        if (actionResult.outcomeSummary) {
-          outcomeSummary = actionResult.outcomeSummary;
-        }
-        this.setState({ ...this.state, status: "completed" });
-      }
-
-      // Small cooldown between actions
-      await helper.wait(100);
     }
 
     if (!finished) {
@@ -510,6 +523,25 @@ ${textSummary}
     throw new Error("Gemini API call failed");
   }
 
+  private parseLLMResponseText(textResponse: string): LLMResponse {
+    let cleanText = textResponse.trim();
+    if (cleanText.startsWith("```")) {
+      const firstLineBreak = cleanText.indexOf("\n");
+      if (firstLineBreak !== -1) {
+        const lastCodeBlock = cleanText.lastIndexOf("```");
+        if (lastCodeBlock > firstLineBreak) {
+          cleanText = cleanText.substring(firstLineBreak + 1, lastCodeBlock).trim();
+        }
+      }
+    }
+    try {
+      return JSON.parse(cleanText) as LLMResponse;
+    } catch (parseErr) {
+      console.error("Failed to parse LLM response as JSON. Raw response was:", textResponse);
+      throw new Error(`LLM output parsing error: ${parseErr}`);
+    }
+  }
+
   private async queryWorkersAI(systemPrompt: string, userPrompt: string): Promise<LLMResponse> {
     if (!this.env.AI) {
       throw new Error("No Workers AI binding available");
@@ -537,30 +569,11 @@ ${textSummary}
       throw new Error("Empty response from Workers AI");
     }
 
-    let decision: LLMResponse;
     if (typeof rawResponse === "object" && rawResponse !== null) {
-      decision = rawResponse as unknown as LLMResponse;
-    } else {
-      const textResponse = rawResponse as string;
-      let cleanText = textResponse.trim();
-      if (cleanText.startsWith("```")) {
-        const firstLineBreak = cleanText.indexOf("\n");
-        if (firstLineBreak !== -1) {
-          const lastCodeBlock = cleanText.lastIndexOf("```");
-          if (lastCodeBlock > firstLineBreak) {
-            cleanText = cleanText.substring(firstLineBreak + 1, lastCodeBlock).trim();
-          }
-        }
-      }
-      try {
-        decision = JSON.parse(cleanText) as LLMResponse;
-      } catch (parseErr) {
-        console.error("Failed to parse LLM response as JSON. Raw response was:", textResponse);
-        throw new Error(`LLM output parsing error: ${parseErr}`);
-      }
+      return rawResponse as unknown as LLMResponse;
     }
 
-    return decision;
+    return this.parseLLMResponseText(rawResponse as string);
   }
 
   /**
@@ -583,8 +596,20 @@ ${textSummary}
       return await this.queryWorkersAI(systemPrompt, userPrompt);
     } catch (err: unknown) {
       if (geminiError) {
-        const errMessage = err instanceof Error ? err.message : String(err);
-        const geminiMessage = geminiError instanceof Error ? geminiError.message : String(geminiError);
+        let errMessage: string;
+        if (err instanceof Error) {
+          errMessage = err.message;
+        } else {
+          errMessage = String(err);
+        }
+
+        let geminiMessage: string;
+        if (geminiError instanceof Error) {
+          geminiMessage = geminiError.message;
+        } else {
+          geminiMessage = String(geminiError);
+        }
+
         throw new Error(`Workers AI fallback failed: ${errMessage}. (Gemini API also failed: ${geminiMessage})`);
       }
       if (!this.env.AI) {
@@ -604,9 +629,9 @@ export async function verifyHmacSignature(
   if (!expiryStr || !signatureHex) return false;
 
   try {
-    const expiry = parseInt(expiryStr, 10);
+    const expiry = Number.parseInt(expiryStr, 10);
     // Ensure token hasn't expired (and timestamp is valid)
-    if (isNaN(expiry) || Date.now() > expiry) {
+    if (Number.isNaN(expiry) || Date.now() > expiry) {
       return false;
     }
 
@@ -641,7 +666,7 @@ export async function verifyHmacSignature(
       return false;
     }
     const sigBytes = new Uint8Array(
-      matches.map(byte => parseInt(byte, 16))
+      matches.map(byte => Number.parseInt(byte, 16))
     );
 
     // Verify the expiry timestamp matches the signature
@@ -657,11 +682,11 @@ export async function verifyHmacSignature(
   }
 }
 
-const ALLOWED_ORIGINS = ["https://fintechnick.com", "https://localhost:3000"];
+const ALLOWED_ORIGINS = ["https://fintechnick.com", "https://localhost:3000"] as const;
 
 function getCorsOrigin(request: Request): string {
   const origin = request.headers.get("Origin");
-  if (origin && ALLOWED_ORIGINS.includes(origin)) {
+  if (origin && (ALLOWED_ORIGINS as readonly string[]).includes(origin)) {
     return origin;
   }
   return "";
