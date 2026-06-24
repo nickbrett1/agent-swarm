@@ -4,6 +4,14 @@ import puppeteer, { BrowserWorker } from "@cloudflare/puppeteer";
 import type { Ai } from "@cloudflare/workers-types";
 import ipaddr from "ipaddr.js";
 
+const PRIVATE_IP_RANGES = new Set([
+  'private',
+  'loopback',
+  'linkLocal',
+  'unspecified',
+  'uniqueLocal',
+]);
+
 export interface Env {
   MYBROWSER: BrowserWorker;
   AI: Ai;
@@ -55,13 +63,7 @@ export class ShopperAgent extends Agent<Env, ShopperState> {
 
       const range = ip.range();
 
-      return (
-        range === 'private' ||
-        range === 'loopback' ||
-        range === 'linkLocal' ||
-        range === 'unspecified' ||
-        range === 'uniqueLocal'
-      );
+      return PRIVATE_IP_RANGES.has(range);
     } catch (ipParseErr) {
       console.warn("Ignored error parsing IP address:", ipParseErr);
       return false;
