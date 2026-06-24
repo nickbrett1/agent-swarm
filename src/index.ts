@@ -102,7 +102,8 @@ export class ShopperAgent extends Agent<Env, ShopperState> {
       const resolveDns = async (type: string) => {
         try {
           const response = await fetch(`https://cloudflare-dns.com/dns-query?name=${hostname}&type=${type}`, {
-            headers: { 'accept': 'application/dns-json' }
+            headers: { 'accept': 'application/dns-json' },
+            signal: AbortSignal.timeout(5000)
           });
           if (!response.ok) return [];
           const data = await response.json() as { Answer?: Array<{ type: number, data: string }> };
@@ -570,7 +571,30 @@ ${textSummary}
         throw new Error("Empty response from Workers AI");
       }
 
-      return this.parseWorkersAIResponse(rawResponse);
+      let decision: LLMResponse;
+      if (typeof rawResponse === "object" && rawResponse !== null) {
+        decision = rawResponse as unknown as LLMResponse;
+      } else {
+        const textResponse = rawResponse as string;
+        let cleanText = textResponse.trim();
+        if (cleanText.startsWith("```")) {
+          cleanText = cleanText.slice(3).trim();
+          if (cleanText.toLowerCase().startsWith("json")) {
+            cleanText = cleanText.slice(4).trim();
+          }
+          if (cleanText.endsWith("```")) {
+            cleanText = cleanText.slice(0, -3).trim();
+          }
+        }
+        try {
+          decision = JSON.parse(cleanText) as LLMResponse;
+        } catch (parseErr) {
+          console.error("Failed to parse LLM response as JSON. Raw response was:", textResponse);
+          throw new Error(`LLM output parsing error: ${parseErr}`);
+        }
+      }
+
+      return decision;
     } catch (err: unknown) {
       if (geminiError) {
         const errMessage = err instanceof Error ? err.message : String(err);
