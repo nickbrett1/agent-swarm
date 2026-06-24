@@ -1,3 +1,4 @@
+import ipaddr from "ipaddr.js";
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 vi.mock("cloudflare:workers", () => ({
@@ -298,10 +299,22 @@ describe('verifyHmacSignature', () => {
 
   async function generateTestSignature(expiryStr: string, overrideSecret = secret) {
     const encoder = new TextEncoder();
-    const key = await crypto.subtle.importKey(
+    const keyMaterial = await crypto.subtle.importKey(
       'raw',
       encoder.encode(overrideSecret),
-      { name: 'HMAC', hash: 'SHA-256' },
+      { name: 'PBKDF2' },
+      false,
+      ['deriveKey']
+    );
+    const key = await crypto.subtle.deriveKey(
+      {
+        name: 'PBKDF2',
+        salt: encoder.encode('agent-swarm-salt'),
+        iterations: 100000,
+        hash: 'SHA-256'
+      },
+      keyMaterial,
+      { name: 'HMAC', hash: 'SHA-256', length: 256 },
       false,
       ['sign']
     );
@@ -505,6 +518,16 @@ describe('ShopperAgent isSafeUrl validation', () => {
 
 
 
+
+  it('should handle IP parsing errors gracefully and return false in isPrivateIp (treating as non-private/safe if otherwise valid)', async () => {
+    vi.spyOn(ipaddr, 'parse').mockImplementationOnce(() => {
+      throw new Error('mock parse error');
+    });
+    // This will hit ipaddr.isValid(hostname) inside isSafeUrl (which returns true for 1.1.1.1),
+    // then call isPrivateIp, which will throw, catch the error, and return false.
+    // Since it returns false for "is it private?", isSafeUrl will return !false -> true.
+    expect(await agent.isSafeUrl('https://1.1.1.1')).toBe(true);
+  });
 
   const testCases = [
     // Valid HTTP/HTTPS
