@@ -122,19 +122,17 @@ describe('ShopperAgent isSafeUrl Logic', () => {
     expect(isSafe).toBe(true);
   });
 
-  it('should explicitly catch and log URL parsing errors for malformed URLs', async () => {
+  it('should gracefully handle and catch URL parsing errors', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const env = {};
     const agent = new (ShopperAgent as any)(null, env);
-    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-
-    const isSafe = await agent.isSafeUrl('not a url');
+    const isSafe = await agent.isSafeUrl('not a valid url string');
 
     expect(isSafe).toBe(false);
     expect(warnSpy).toHaveBeenCalledWith(
       "Ignored URL parsing error in isSafeUrl:",
       expect.any(TypeError)
     );
-
     warnSpy.mockRestore();
   });
 });
