@@ -235,6 +235,96 @@ const STRIPE_EXPIRY_SELECTORS = ["input#cardExpiry", 'input[name="exp-date"]', '
 const STRIPE_CVC_SELECTORS = ["input#cardCvc", 'input[name="cvc"]', 'input[placeholder*="CVC"]', 'input[aria-label*="CVC"]'];
 const STRIPE_NAME_SELECTORS = ["input#billingName", 'input[name="name"]', 'input[placeholder*="Name"]'];
 
+const EXTRACT_ELEMENTS_SCRIPT = `
+(() => {
+  function getXPath(element) {
+    if (element.id) {
+      return \`//*[@id="\${element.id}"]\`;
+    }
+    const paths = [];
+    let current = element;
+    while (current && current.nodeType === Node.ELEMENT_NODE) {
+      let index = 0;
+      let hasSiblingWithSameTag = false;
+
+      let prevSibling = current.previousSibling;
+      while (prevSibling) {
+        if (prevSibling.nodeType !== Node.DOCUMENT_TYPE_NODE && prevSibling.nodeName === current.nodeName) {
+          index++;
+          hasSiblingWithSameTag = true;
+        }
+        prevSibling = prevSibling.previousSibling;
+      }
+
+      let nextSibling = current.nextSibling;
+      while (nextSibling) {
+        if (nextSibling.nodeName === current.nodeName) {
+          hasSiblingWithSameTag = true;
+          break;
+        }
+        nextSibling = nextSibling.nextSibling;
+      }
+
+      const tagName = current.nodeName.toLowerCase();
+      const pathIndex = hasSiblingWithSameTag ? \`[\${index + 1}]\` : "";
+      paths.unshift(tagName + pathIndex);
+      current = current.parentNode;
+    }
+    return paths.length ? "/" + paths.join("/") : "";
+  }
+
+  function isVisible(el) {
+    const rect = el.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) return false;
+    const style = window.getComputedStyle(el);
+    if (style.display === "none" || style.visibility === "hidden" || Number.parseFloat(style.opacity) === 0) return false;
+    return true;
+  }
+
+  function isDisabled(el) {
+    if ('disabled' in el && el.disabled) return true;
+    if (el.getAttribute("aria-disabled") === "true") return true;
+    if (el.classList.contains("disabled")) return true;
+    return false;
+  }
+
+  function getCleanText(el) {
+    let text = (el.innerText || el.textContent || "").trim();
+    if (!text && el.tagName === "INPUT") {
+      text = el.value || "";
+    }
+    if (text.length > 80) {
+      text = text.substring(0, 77) + "...";
+    }
+    return text;
+  }
+
+  function extractElementData(el) {
+    return {
+      tag: el.tagName.toLowerCase(),
+      type: el.type || "",
+      text: getCleanText(el),
+      placeholder: el.placeholder || el.getAttribute("aria-label") || "",
+      name: el.getAttribute("name") || el.getAttribute("id") || "",
+      role: el.getAttribute("role") || "",
+      xpath: getXPath(el)
+    };
+  }
+
+  const results = [];
+  const selector = 'button, a, input, select, textarea, [role="button"], [onclick]';
+  const nodes = document.querySelectorAll(selector);
+
+  nodes.forEach((node) => {
+    const el = node;
+    if (!isVisible(el) || isDisabled(el)) return;
+    results.push(extractElementData(el));
+  });
+
+  return results;
+})();
+`;
+
 export class StagehandBrowserHelper {
   private stagehand: Stagehand | null = null;
   private elementsMap: Map<string, string> = new Map(); // id -> xpath
@@ -478,93 +568,7 @@ export class StagehandBrowserHelper {
 
     while (attempts < maxAttempts) {
       try {
-        elementsData = await page.evaluate(() => {
-          function getXPath(element: Element): string {
-            if (element.id) {
-              return `//*[@id="${element.id}"]`;
-            }
-            const paths: string[] = [];
-            let current: Node | null = element;
-            while (current && current.nodeType === Node.ELEMENT_NODE) {
-              let index = 0;
-              let hasSiblingWithSameTag = false;
-
-              let prevSibling = current.previousSibling;
-              while (prevSibling) {
-                if (prevSibling.nodeType !== Node.DOCUMENT_TYPE_NODE && prevSibling.nodeName === current.nodeName) {
-                  index++;
-                  hasSiblingWithSameTag = true;
-                }
-                prevSibling = prevSibling.previousSibling;
-              }
-
-              let nextSibling = current.nextSibling;
-              while (nextSibling) {
-                if (nextSibling.nodeName === current.nodeName) {
-                  hasSiblingWithSameTag = true;
-                  break;
-                }
-                nextSibling = nextSibling.nextSibling;
-              }
-
-              const tagName = current.nodeName.toLowerCase();
-              const pathIndex = hasSiblingWithSameTag ? `[${index + 1}]` : "";
-              paths.unshift(tagName + pathIndex);
-              current = current.parentNode;
-            }
-            return paths.length ? "/" + paths.join("/") : "";
-          }
-
-          function isVisible(el: HTMLElement): boolean {
-            const rect = el.getBoundingClientRect();
-            if (rect.width === 0 || rect.height === 0) return false;
-            const style = window.getComputedStyle(el);
-            if (style.display === "none" || style.visibility === "hidden" || Number.parseFloat(style.opacity) === 0) return false;
-            return true;
-          }
-
-          function isDisabled(el: HTMLElement): boolean {
-            if ('disabled' in el && (el as any).disabled) return true;
-            if (el.getAttribute("aria-disabled") === "true") return true;
-            if (el.classList.contains("disabled")) return true;
-            return false;
-          }
-
-          function getCleanText(el: HTMLElement): string {
-            let text = (el.innerText || el.textContent || "").trim();
-            if (!text && el.tagName === "INPUT") {
-              text = (el as HTMLInputElement).value || "";
-            }
-            if (text.length > 80) {
-              text = text.substring(0, 77) + "...";
-            }
-            return text;
-          }
-
-          function extractElementData(el: HTMLElement): ElementData {
-            return {
-              tag: el.tagName.toLowerCase(),
-              type: (el as HTMLInputElement).type || "",
-              text: getCleanText(el),
-              placeholder: (el as HTMLInputElement).placeholder || el.getAttribute("aria-label") || "",
-              name: el.getAttribute("name") || el.getAttribute("id") || "",
-              role: el.getAttribute("role") || "",
-              xpath: getXPath(el)
-            };
-          }
-
-          const results: ElementData[] = [];
-          const selector = 'button, a, input, select, textarea, [role="button"], [onclick]';
-          const nodes = document.querySelectorAll(selector);
-
-          nodes.forEach((node) => {
-            const el = node as HTMLElement;
-            if (!isVisible(el) || isDisabled(el)) return;
-            results.push(extractElementData(el));
-          });
-
-          return results;
-        });
+        elementsData = await page.evaluate(EXTRACT_ELEMENTS_SCRIPT);
         break; // Success, break out of loop
       } catch (err) {
         attempts++;
