@@ -548,9 +548,14 @@ ${textSummary}
       } else {
         const textResponse = rawResponse as string;
         let cleanText = textResponse.trim();
-        const match = cleanText.match(/^```(?:json)?([\s\S]*?)```$/);
-        if (match) {
-          cleanText = match[1].trim();
+        if (cleanText.startsWith("```")) {
+          cleanText = cleanText.slice(3).trim();
+          if (cleanText.toLowerCase().startsWith("json")) {
+            cleanText = cleanText.slice(4).trim();
+          }
+          if (cleanText.endsWith("```")) {
+            cleanText = cleanText.slice(0, -3).trim();
+          }
         }
         try {
           decision = JSON.parse(cleanText) as LLMResponse;
