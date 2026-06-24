@@ -120,6 +120,20 @@ describe('ShopperAgent isSafeUrl Logic', () => {
     const isSafe = await agent.isSafeUrl('https://1.1.1.1/shop');
     expect(isSafe).toBe(true);
   });
+
+  it('should gracefully handle and catch URL parsing errors', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const env = {};
+    const agent = new (ShopperAgent as any)(null, env);
+    const isSafe = await agent.isSafeUrl('not a valid url string');
+
+    expect(isSafe).toBe(false);
+    expect(warnSpy).toHaveBeenCalledWith(
+      "Ignored URL parsing error in isSafeUrl:",
+      expect.any(TypeError)
+    );
+    warnSpy.mockRestore();
+  });
 });
 
 describe('ShopperAgent queryLLM Fallback Logic', () => {
