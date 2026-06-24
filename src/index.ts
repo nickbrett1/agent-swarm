@@ -504,6 +504,26 @@ ${textSummary}
     throw new Error("Gemini API call failed after max retries");
   }
 
+  private parseWorkersAIResponse(rawResponse: unknown): LLMResponse {
+    if (typeof rawResponse === "object" && rawResponse !== null) {
+      return rawResponse as unknown as LLMResponse;
+    }
+
+    const textResponse = rawResponse as string;
+    let cleanText = textResponse.trim();
+    const match = cleanText.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/);
+    if (match) {
+      cleanText = match[1].trim();
+    }
+
+    try {
+      return JSON.parse(cleanText) as LLMResponse;
+    } catch (parseErr) {
+      console.error("Failed to parse LLM response as JSON. Raw response was:", textResponse);
+      throw new Error(`LLM output parsing error: ${parseErr}`);
+    }
+  }
+
   private async queryWorkersAI(systemPrompt: string, userPrompt: string, geminiError: unknown): Promise<LLMResponse> {
     if (!this.env.AI) {
       if (geminiError) {
@@ -535,25 +555,7 @@ ${textSummary}
         throw new Error("Empty response from Workers AI");
       }
 
-      let decision: LLMResponse;
-      if (typeof rawResponse === "object" && rawResponse !== null) {
-        decision = rawResponse as unknown as LLMResponse;
-      } else {
-        const textResponse = rawResponse as string;
-        let cleanText = textResponse.trim();
-        const match = cleanText.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/);
-        if (match) {
-          cleanText = match[1].trim();
-        }
-        try {
-          decision = JSON.parse(cleanText) as LLMResponse;
-        } catch (parseErr) {
-          console.error("Failed to parse LLM response as JSON. Raw response was:", textResponse);
-          throw new Error(`LLM output parsing error: ${parseErr}`);
-        }
-      }
-
-      return decision;
+      return this.parseWorkersAIResponse(rawResponse);
     } catch (err: unknown) {
       if (geminiError) {
         const errMessage = err instanceof Error ? err.message : String(err);
