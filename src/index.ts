@@ -33,6 +33,8 @@ interface LLMResponse {
 }
 
 export class ShopperAgent extends Agent<Env, ShopperState> {
+  private readonly dnsCache = new Map<string, boolean>();
+
   // Define initial state
   initialState: ShopperState = {
     persona: "A cautious tech buyer looking for a good laptop or accessory",
@@ -98,6 +100,11 @@ export class ShopperAgent extends Agent<Env, ShopperState> {
         return !this.isPrivateIp(hostname);
       }
 
+      // Check cache before resolving DNS
+      if (this.dnsCache.has(hostname)) {
+        return this.dnsCache.get(hostname)!;
+      }
+
       // Otherwise, resolve the domain name to A/AAAA records
       const resolveDns = async (type: string) => {
         try {
@@ -130,11 +137,13 @@ export class ShopperAgent extends Agent<Env, ShopperState> {
         if (ipaddr.isValid(record.data)) {
           if (this.isPrivateIp(record.data)) {
             console.warn(`DNS resolution for ${hostname} returned a private IP: ${record.data}`);
+            this.dnsCache.set(hostname, false);
             return false;
           }
         }
       }
 
+      this.dnsCache.set(hostname, true);
       return true;
     } catch (urlParseErr) {
       console.warn("Ignored URL parsing error in isSafeUrl:", urlParseErr);
@@ -461,7 +470,7 @@ ${textSummary}
     return { systemPrompt, userPrompt };
   }
 
-  private async queryGemini(apiKey: string, systemPrompt: string, userPrompt: string): Promise<LLMResponse> {
+  private async queryGemini(systemPrompt: string, userPrompt: string, apiKey: string): Promise<LLMResponse> {
     const maxRetries = 3;
     const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent`;
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
@@ -474,10 +483,16 @@ ${textSummary}
           },
           body: JSON.stringify({
             systemInstruction: {
-              parts: [{ text: systemPrompt }]
+              parts: [
+                { text: systemPrompt }
+              ]
             },
             contents: [
-              { parts: [{ text: userPrompt }] }
+              {
+                parts: [
+                  { text: userPrompt }
+                ]
+              }
             ],
             generationConfig: {
               responseMimeType: "application/json"
@@ -507,10 +522,10 @@ ${textSummary}
         }
       }
     }
-    throw new Error("Gemini API call failed");
+    throw new Error("Gemini query failed");
   }
 
-  private async queryWorkersAI(systemPrompt: string, userPrompt: string): Promise<LLMResponse> {
+  private async queryWorkersAI(systemPrompt: string, userPrompt: string, geminiError: unknown): Promise<LLMResponse> {
     if (!this.env.AI) {
       throw new Error("No Workers AI binding available");
     }
@@ -529,26 +544,19 @@ ${textSummary}
       }
     });
 
-    const aiResponse = response as Record<string, unknown>;
-    console.log("Workers AI Llama raw response type:", typeof response, "keys:", Object.keys(aiResponse), "stringified:", JSON.stringify(aiResponse));
-
-    const rawResponse = aiResponse.response || aiResponse.text;
-    if (!rawResponse) {
-      throw new Error("Empty response from Workers AI");
-    }
-
-    let decision: LLMResponse;
-    if (typeof rawResponse === "object" && rawResponse !== null) {
-      decision = rawResponse as unknown as LLMResponse;
-    } else {
-      const textResponse = rawResponse as string;
-      let cleanText = textResponse.trim();
-      if (cleanText.startsWith("```")) {
-        const firstLineBreak = cleanText.indexOf("\n");
-        if (firstLineBreak !== -1) {
-          const lastCodeBlock = cleanText.lastIndexOf("```");
-          if (lastCodeBlock > firstLineBreak) {
-            cleanText = cleanText.substring(firstLineBreak + 1, lastCodeBlock).trim();
+      let decision: LLMResponse;
+      if (typeof rawResponse === "object" && rawResponse !== null) {
+        decision = rawResponse as unknown as LLMResponse;
+      } else {
+        const textResponse = rawResponse as string;
+        let cleanText = textResponse.trim();
+        if (cleanText.startsWith("```")) {
+          let startIndex = 3;
+          if (cleanText.substring(3).toLowerCase().startsWith("json")) {
+            startIndex = 7;
+          }
+          if (cleanText.endsWith("```")) {
+            cleanText = cleanText.substring(startIndex, cleanText.length - 3).trim();
           }
         }
       }
