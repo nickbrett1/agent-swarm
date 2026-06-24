@@ -1,3 +1,4 @@
+import ipaddr from "ipaddr.js";
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 vi.mock("cloudflare:workers", () => ({
@@ -491,6 +492,16 @@ describe('ShopperAgent isSafeUrl validation', () => {
 
 
 
+
+  it('should handle IP parsing errors gracefully and return false in isPrivateIp (treating as non-private/safe if otherwise valid)', async () => {
+    vi.spyOn(ipaddr, 'parse').mockImplementationOnce(() => {
+      throw new Error('mock parse error');
+    });
+    // This will hit ipaddr.isValid(hostname) inside isSafeUrl (which returns true for 1.1.1.1),
+    // then call isPrivateIp, which will throw, catch the error, and return false.
+    // Since it returns false for "is it private?", isSafeUrl will return !false -> true.
+    expect(await agent.isSafeUrl('https://1.1.1.1')).toBe(true);
+  });
 
   const testCases = [
     // Valid HTTP/HTTPS
