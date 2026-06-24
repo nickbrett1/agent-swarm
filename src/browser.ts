@@ -793,10 +793,11 @@ export class StagehandBrowserHelper {
       return true;
     }
 
-    console.log("Playwright direct fill was incomplete. Falling back to Stagehand act...");
+    console.log("Fallback to Stagehand act for Stripe...");
     try {
-      const instruction = `Fill the credit card number with "${card}", expiration date with "${expiry}", CVC/CVV with "${cvc}", and cardholder name with "${name}"`;
-      await page.act(instruction);
+      await page.act({
+        action: `Fill the credit card checkout form with this testing card information: card number ${card}, expiry ${expiry}, cvc ${cvc}, and name ${name}. Submit the form if there is a button.`
+      });
       return true;
     } catch (err) {
       console.error("Stagehand fallback act for Stripe failed:", err);
