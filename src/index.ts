@@ -445,6 +445,108 @@ ${textSummary}
     return { systemPrompt, userPrompt };
   }
 
+  private async queryGemini(apiKey: string, systemPrompt: string, userPrompt: string): Promise<LLMResponse> {
+    const maxRetries = 3;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent`;
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        const response = await fetch(url, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-goog-api-key": apiKey
+          },
+          body: JSON.stringify({
+            systemInstruction: {
+              parts: [{ text: systemPrompt }]
+            },
+            contents: [
+              { parts: [{ text: userPrompt }] }
+            ],
+            generationConfig: {
+              responseMimeType: "application/json"
+            }
+          })
+        });
+
+        if (!response.ok) {
+          throw new Error(`Gemini API returned status ${response.status}: ${await response.text()}`);
+        }
+
+        const data = await response.json() as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> };
+        const textResponse = data.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (!textResponse) {
+          throw new Error("Empty response from Gemini API");
+        }
+
+        return JSON.parse(textResponse.trim()) as LLMResponse;
+      } catch (err: unknown) {
+        console.warn(`Gemini API call attempt ${attempt} failed:`, err instanceof Error ? err.message : String(err));
+        if (attempt === maxRetries) {
+          console.error("Gemini API call failed after max retries, falling back to Workers AI:", err);
+          throw err;
+        } else {
+          console.log("Waiting 2 seconds before retrying Gemini API...");
+          await new Promise((resolve) => setTimeout(resolve, 2000));
+        }
+      }
+    }
+    throw new Error("Gemini API call failed");
+  }
+
+  private async queryWorkersAI(systemPrompt: string, userPrompt: string): Promise<LLMResponse> {
+    if (!this.env.AI) {
+      throw new Error("No Workers AI binding available");
+    }
+
+    console.log("Calling Workers AI Llama model...");
+    const model = "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
+    
+    const response = await this.env.AI.run(model, {
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt }
+      ]
+    }, {
+      gateway: {
+        id: "default"
+      }
+    });
+
+    const aiResponse = response as Record<string, unknown>;
+    console.log("Workers AI Llama raw response type:", typeof response, "keys:", Object.keys(aiResponse), "stringified:", JSON.stringify(aiResponse));
+
+    const rawResponse = aiResponse.response || aiResponse.text;
+    if (!rawResponse) {
+      throw new Error("Empty response from Workers AI");
+    }
+
+    let decision: LLMResponse;
+    if (typeof rawResponse === "object" && rawResponse !== null) {
+      decision = rawResponse as unknown as LLMResponse;
+    } else {
+      const textResponse = rawResponse as string;
+      let cleanText = textResponse.trim();
+      if (cleanText.startsWith("```")) {
+        const firstLineBreak = cleanText.indexOf("\n");
+        if (firstLineBreak !== -1) {
+          const lastCodeBlock = cleanText.lastIndexOf("```");
+          if (lastCodeBlock > firstLineBreak) {
+            cleanText = cleanText.substring(firstLineBreak + 1, lastCodeBlock).trim();
+          }
+        }
+      }
+      try {
+        decision = JSON.parse(cleanText) as LLMResponse;
+      } catch (parseErr) {
+        console.error("Failed to parse LLM response as JSON. Raw response was:", textResponse);
+        throw new Error(`LLM output parsing error: ${parseErr}`);
+      }
+    }
+
+    return decision;
+  }
+
   /**
    * Queries either the Gemini API (if key is present) or falls back to Workers AI.
    */
@@ -453,123 +555,24 @@ ${textSummary}
     const apiKey = this.env.GOOGLE_API_KEY || this.env.GEMINI_API_KEY;
 
     if (apiKey) {
-      const maxRetries = 3;
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent`;
-      for (let attempt = 1; attempt <= maxRetries; attempt++) {
-        try {
-          const response = await fetch(url, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "x-goog-api-key": apiKey
-            },
-            body: JSON.stringify({
-              systemInstruction: {
-                parts: [
-                  {
-                    text: systemPrompt
-                  }
-                ]
-              },
-              contents: [
-                {
-                  parts: [
-                    {
-                      text: userPrompt
-                    }
-                  ]
-                }
-              ],
-              generationConfig: {
-                responseMimeType: "application/json"
-              }
-            })
-          });
-
-          if (!response.ok) {
-            throw new Error(`Gemini API returned status ${response.status}: ${await response.text()}`);
-          }
-
-          const data = await response.json() as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> };
-          const textResponse = data.candidates?.[0]?.content?.parts?.[0]?.text;
-          if (!textResponse) {
-            throw new Error("Empty response from Gemini API");
-          }
-
-          return JSON.parse(textResponse.trim()) as LLMResponse;
-        } catch (err: unknown) {
-          geminiError = err;
-          console.warn(`Gemini API call attempt ${attempt} failed:`, err instanceof Error ? err.message : String(err));
-          if (attempt === maxRetries) {
-            console.error("Gemini API call failed after max retries, falling back to Workers AI:", err);
-          } else {
-            console.log("Waiting 2 seconds before retrying Gemini API...");
-            await new Promise((resolve) => setTimeout(resolve, 2000));
-          }
-        }
+      try {
+        return await this.queryGemini(apiKey, systemPrompt, userPrompt);
+      } catch (err) {
+        geminiError = err;
       }
     }
 
     // Fallback: Workers AI
-    if (!this.env.AI) {
-      if (geminiError) {
-        throw geminiError;
-      }
-      throw new Error("No LLM keys or Workers AI binding available");
-    }
-
-    console.log("Calling Workers AI Llama model...");
-    const model = "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
-    
     try {
-      const response = await this.env.AI.run(model, {
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userPrompt }
-        ]
-      }, {
-        gateway: {
-          id: "default"
-        }
-      });
-
-      const aiResponse = response as Record<string, unknown>;
-      console.log("Workers AI Llama raw response type:", typeof response, "keys:", Object.keys(aiResponse), "stringified:", JSON.stringify(aiResponse));
-      
-      const rawResponse = aiResponse.response || aiResponse.text;
-      if (!rawResponse) {
-        throw new Error("Empty response from Workers AI");
-      }
-
-      let decision: LLMResponse;
-      if (typeof rawResponse === "object" && rawResponse !== null) {
-        decision = rawResponse as unknown as LLMResponse;
-      } else {
-        const textResponse = rawResponse as string;
-        let cleanText = textResponse.trim();
-        if (cleanText.startsWith("```")) {
-          const firstLineBreak = cleanText.indexOf("\n");
-          if (firstLineBreak !== -1) {
-            const lastCodeBlock = cleanText.lastIndexOf("```");
-            if (lastCodeBlock > firstLineBreak) {
-              cleanText = cleanText.substring(firstLineBreak + 1, lastCodeBlock).trim();
-            }
-          }
-        }
-        try {
-          decision = JSON.parse(cleanText) as LLMResponse;
-        } catch (parseErr) {
-          console.error("Failed to parse LLM response as JSON. Raw response was:", textResponse);
-          throw new Error(`LLM output parsing error: ${parseErr}`);
-        }
-      }
-
-      return decision;
+      return await this.queryWorkersAI(systemPrompt, userPrompt);
     } catch (err: unknown) {
       if (geminiError) {
         const errMessage = err instanceof Error ? err.message : String(err);
         const geminiMessage = geminiError instanceof Error ? geminiError.message : String(geminiError);
         throw new Error(`Workers AI fallback failed: ${errMessage}. (Gemini API also failed: ${geminiMessage})`);
+      }
+      if (!this.env.AI) {
+        throw new Error("No LLM keys or Workers AI binding available");
       }
       throw err;
     }
