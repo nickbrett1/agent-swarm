@@ -445,72 +445,66 @@ ${textSummary}
     return { systemPrompt, userPrompt };
   }
 
-  /**
-   * Queries either the Gemini API (if key is present) or falls back to Workers AI.
-   */
-  private async queryLLM(systemPrompt: string, userPrompt: string): Promise<LLMResponse> {
-    let geminiError: unknown = null;
-    const apiKey = this.env.GOOGLE_API_KEY || this.env.GEMINI_API_KEY;
-
-    if (apiKey) {
-      const maxRetries = 3;
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent`;
-      for (let attempt = 1; attempt <= maxRetries; attempt++) {
-        try {
-          const response = await fetch(url, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "x-goog-api-key": apiKey
+  private async queryGemini(apiKey: string, systemPrompt: string, userPrompt: string): Promise<LLMResponse> {
+    const maxRetries = 3;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent`;
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        const response = await fetch(url, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-goog-api-key": apiKey
+          },
+          body: JSON.stringify({
+            systemInstruction: {
+              parts: [
+                {
+                  text: systemPrompt
+                }
+              ]
             },
-            body: JSON.stringify({
-              systemInstruction: {
+            contents: [
+              {
                 parts: [
                   {
-                    text: systemPrompt
+                    text: userPrompt
                   }
                 ]
-              },
-              contents: [
-                {
-                  parts: [
-                    {
-                      text: userPrompt
-                    }
-                  ]
-                }
-              ],
-              generationConfig: {
-                responseMimeType: "application/json"
               }
-            })
-          });
+            ],
+            generationConfig: {
+              responseMimeType: "application/json"
+            }
+          })
+        });
 
-          if (!response.ok) {
-            throw new Error(`Gemini API returned status ${response.status}: ${await response.text()}`);
-          }
+        if (!response.ok) {
+          throw new Error(`Gemini API returned status ${response.status}: ${await response.text()}`);
+        }
 
-          const data = await response.json() as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> };
-          const textResponse = data.candidates?.[0]?.content?.parts?.[0]?.text;
-          if (!textResponse) {
-            throw new Error("Empty response from Gemini API");
-          }
+        const data = await response.json() as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> };
+        const textResponse = data.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (!textResponse) {
+          throw new Error("Empty response from Gemini API");
+        }
 
-          return JSON.parse(textResponse.trim()) as LLMResponse;
-        } catch (err: unknown) {
-          geminiError = err;
-          console.warn(`Gemini API call attempt ${attempt} failed:`, err instanceof Error ? err.message : String(err));
-          if (attempt === maxRetries) {
-            console.error("Gemini API call failed after max retries, falling back to Workers AI:", err);
-          } else {
-            console.log("Waiting 2 seconds before retrying Gemini API...");
-            await new Promise((resolve) => setTimeout(resolve, 2000));
-          }
+        return JSON.parse(textResponse.trim()) as LLMResponse;
+      } catch (err: unknown) {
+        console.warn(`Gemini API call attempt ${attempt} failed:`, err instanceof Error ? err.message : String(err));
+        if (attempt === maxRetries) {
+          console.error("Gemini API call failed after max retries, falling back to Workers AI:", err);
+          throw err;
+        } else {
+          console.log("Waiting 2 seconds before retrying Gemini API...");
+          await new Promise((resolve) => setTimeout(resolve, 2000));
         }
       }
     }
+    throw new Error("Gemini API call failed after max retries");
+  }
 
-    // Fallback: Workers AI
+  private async queryWorkersAI(systemPrompt: string, userPrompt: string, geminiError: unknown): Promise<LLMResponse> {
     if (!this.env.AI) {
       if (geminiError) {
         throw geminiError;
@@ -568,6 +562,25 @@ ${textSummary}
       }
       throw err;
     }
+  }
+
+  /**
+   * Queries either the Gemini API (if key is present) or falls back to Workers AI.
+   */
+  private async queryLLM(systemPrompt: string, userPrompt: string): Promise<LLMResponse> {
+    let geminiError: unknown = null;
+    const apiKey = this.env.GOOGLE_API_KEY || this.env.GEMINI_API_KEY;
+
+    if (apiKey) {
+      try {
+        return await this.queryGemini(apiKey, systemPrompt, userPrompt);
+      } catch (err: unknown) {
+        geminiError = err;
+      }
+    }
+
+    // Fallback: Workers AI
+    return await this.queryWorkersAI(systemPrompt, userPrompt, geminiError);
   }
 }
 
