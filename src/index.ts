@@ -4,14 +4,6 @@ import puppeteer, { BrowserWorker } from "@cloudflare/puppeteer";
 import type { Ai } from "@cloudflare/workers-types";
 import ipaddr from "ipaddr.js";
 
-const PRIVATE_IP_RANGES = new Set([
-  'private',
-  'loopback',
-  'linkLocal',
-  'unspecified',
-  'uniqueLocal',
-]);
-
 export interface Env {
   MYBROWSER: BrowserWorker;
   AI: Ai;
@@ -63,7 +55,13 @@ export class ShopperAgent extends Agent<Env, ShopperState> {
 
       const range = ip.range();
 
-      return PRIVATE_IP_RANGES.has(range);
+      return (
+        range === 'private' ||
+        range === 'loopback' ||
+        range === 'linkLocal' ||
+        range === 'unspecified' ||
+        range === 'uniqueLocal'
+      );
     } catch (ipParseErr) {
       console.warn("Ignored error parsing IP address:", ipParseErr);
       return false;
@@ -549,9 +547,12 @@ ${textSummary}
       } else {
         const textResponse = rawResponse as string;
         let cleanText = textResponse.trim();
-        const match = cleanText.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/);
-        if (match) {
-          cleanText = match[1].trim();
+        if (cleanText.startsWith("```") && cleanText.endsWith("```")) {
+          let startIndex = 3;
+          if (cleanText.substring(3).startsWith("json")) {
+            startIndex += 4;
+          }
+          cleanText = cleanText.substring(startIndex, cleanText.length - 3).trim();
         }
         try {
           decision = JSON.parse(cleanText) as LLMResponse;
