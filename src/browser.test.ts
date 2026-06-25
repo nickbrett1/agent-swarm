@@ -278,24 +278,17 @@ describe("StagehandBrowserHelper", () => {
   });
 
   it("should handle Stripe iframe using Stagehand act", async () => {
-    // This test logic covers an obsolete scenario where `handleStripeIframe` attempts an initial `act` call directly instead of going through frames first.
-    // However, looking at the code in `browser.ts`, the direct `act` call is used as a fallback if `page.frames()` filling fails or if frames are empty.
-    // To properly simulate the test as it stands (which doesn't mock frames failure), it actually tries to fill frames, and since no mock is set for frames here, it might just return empty or fail, triggering the fallback.
     await helper.init();
-
-    // Simulate Playwright frames failing (e.g. no frames found) to trigger the fallback act call.
-    mockPage.frames.mockReturnValueOnce([]);
     mockPage.act.mockResolvedValueOnce(undefined);
 
     const success = await helper.handleStripeIframe("4242", "12/28", "123", "John");
     expect(success).toBe(true);
-    expect(mockPage.act).toHaveBeenCalledWith({
-      action: 'Fill the credit card checkout form with this testing card information: card number 4242, expiry 12/28, cvc 123, and name John. Submit the form if there is a button.'
-    });
+    expect(mockPage.act).toHaveBeenCalledWith('Fill the credit card number with "4242", expiration date with "12/28", CVC/CVV with "123", and cardholder name with "John"');
   });
 
-  it("should successfully fill Stripe using Playwright frames", async () => {
+  it("should fallback to Playwright frames filling if Stripe act fails", async () => {
     await helper.init();
+    mockPage.act.mockRejectedValueOnce(new Error("Act failed"));
 
     const firstMock = { fill: vi.fn().mockResolvedValue(undefined) };
     const mockFrame = {
@@ -310,40 +303,6 @@ describe("StagehandBrowserHelper", () => {
     const success = await helper.handleStripeIframe("4242", "12/28", "123", "John");
     expect(success).toBe(true);
     expect(mockFrame.locator).toHaveBeenCalled();
-  });
-
-  it("should return false if both Playwright frames filling and Stagehand act fallback fail", async () => {
-    await helper.init();
-
-    // Simulate Playwright frames failing (e.g. no frames found)
-    mockPage.frames.mockReturnValueOnce([]);
-
-    // Simulate Stagehand act fallback failing
-    mockPage.act.mockRejectedValueOnce(new Error("Fallback Act failed"));
-
-    const success = await helper.handleStripeIframe("4242", "12/28", "123", "John");
-    expect(success).toBe(false);
-    expect(mockPage.frames).toHaveBeenCalled();
-    expect(mockPage.act).toHaveBeenCalledWith({
-      action: 'Fill the credit card checkout form with this testing card information: card number 4242, expiry 12/28, cvc 123, and name John. Submit the form if there is a button.'
-    });
-  });
-
-  it("should return true if Playwright frames filling fails but Stagehand act fallback succeeds", async () => {
-    await helper.init();
-
-    // Simulate Playwright frames failing (e.g. no frames found)
-    mockPage.frames.mockReturnValueOnce([]);
-
-    // Simulate Stagehand act fallback succeeding
-    mockPage.act.mockResolvedValueOnce(undefined);
-
-    const success = await helper.handleStripeIframe("4242", "12/28", "123", "John");
-    expect(success).toBe(true);
-    expect(mockPage.frames).toHaveBeenCalled();
-    expect(mockPage.act).toHaveBeenCalledWith({
-      action: 'Fill the credit card checkout form with this testing card information: card number 4242, expiry 12/28, cvc 123, and name John. Submit the form if there is a button.'
-    });
   });
 
   it("should handle rate limit errors correctly in init", async () => {

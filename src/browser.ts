@@ -62,32 +62,27 @@ async function fillStripeLocators(frames: any[], card: string, expiry: string, c
   let cvcFilled = false;
   let nameFilled = false;
 
-  const cardSelector = STRIPE_CARD_SELECTORS.join(',');
-  const expirySelector = STRIPE_EXPIRY_SELECTORS.join(',');
-  const cvcSelector = STRIPE_CVC_SELECTORS.join(',');
-  const nameSelector = STRIPE_NAME_SELECTORS.join(',');
-
   for (const frame of frames) {
     try {
-      const cardLoc = frame.locator(cardSelector);
+      const cardLoc = frame.locator(STRIPE_CARD_SELECTORS.join(','));
       if (await cardLoc.count() > 0) {
         await cardLoc.first().fill(card);
         cardFilled = true;
       }
 
-      const expiryLoc = frame.locator(expirySelector);
+      const expiryLoc = frame.locator(STRIPE_EXPIRY_SELECTORS.join(','));
       if (await expiryLoc.count() > 0) {
         await expiryLoc.first().fill(expiry);
         expiryFilled = true;
       }
 
-      const cvcLoc = frame.locator(cvcSelector);
+      const cvcLoc = frame.locator(STRIPE_CVC_SELECTORS.join(','));
       if (await cvcLoc.count() > 0) {
         await cvcLoc.first().fill(cvc);
         cvcFilled = true;
       }
 
-      const nameLoc = frame.locator(nameSelector);
+      const nameLoc = frame.locator(STRIPE_NAME_SELECTORS.join(','));
       if (await nameLoc.count() > 0) {
         await nameLoc.first().fill(name);
         nameFilled = true;
@@ -118,30 +113,6 @@ function findNewestPage(context: any, currentPage: any): any {
   return currentPage;
 }
 
-async function handlePatchedFetch(browser: any, originalFetch: Function, request: any, init?: any) {
-  let urlStr = getFetchUrlString(request);
-  const method = getFetchMethod(request, init);
-
-  const stripped = stripFetchQueryParameters(request, urlStr, method);
-  request = stripped.newRequest;
-  urlStr = stripped.newUrlStr;
-
-  console.log(`[MYBROWSER.fetch] request: ${urlStr} [${method}]`);
-  try {
-    const response = await originalFetch.call(browser, request, init);
-    if (urlStr.includes("/v1/devtools/browser/") && method.toUpperCase() !== "DELETE" && !response.webSocket) {
-      const status = response.status;
-      const text = await response.text().catch(() => "");
-      console.error(`[MYBROWSER.fetch] WebSocket upgrade failed. Status: ${status}, Body: ${text}`);
-      throw new Error(`WebSocket upgrade failed: status ${status}, message: ${text}`);
-    }
-    return response;
-  } catch (err) {
-    console.error("[MYBROWSER.fetch] Error during fetch:", err);
-    throw err;
-  }
-}
-
 function patchBrowserFetch() {
   try {
     const wEnv = workersEnv as any;
@@ -153,7 +124,27 @@ function patchBrowserFetch() {
         console.log("Attempting to patch browser.fetch directly...");
         const patchedFetch = Object.assign(
           async function(request: any, init?: any) {
-            return handlePatchedFetch(browser, originalFetch, request, init);
+            let urlStr = getFetchUrlString(request);
+            const method = getFetchMethod(request, init);
+
+            const stripped = stripFetchQueryParameters(request, urlStr, method);
+            request = stripped.newRequest;
+            urlStr = stripped.newUrlStr;
+
+            console.log(`[MYBROWSER.fetch] request: ${urlStr} [${method}]`);
+            try {
+              const response = await originalFetch.call(browser, request, init);
+              if (urlStr.includes("/v1/devtools/browser/") && method.toUpperCase() !== "DELETE" && !response.webSocket) {
+                const status = response.status;
+                const text = await response.text().catch(() => "");
+                console.error(`[MYBROWSER.fetch] WebSocket upgrade failed. Status: ${status}, Body: ${text}`);
+                throw new Error(`WebSocket upgrade failed: status ${status}, message: ${text}`);
+              }
+              return response;
+            } catch (err) {
+              console.error("[MYBROWSER.fetch] Error during fetch:", err);
+              throw err;
+            }
           },
           { __isPatched: true }
         );
@@ -234,96 +225,6 @@ const STRIPE_CARD_SELECTORS = ["input#cardNumber", 'input[name="cardnumber"]', '
 const STRIPE_EXPIRY_SELECTORS = ["input#cardExpiry", 'input[name="exp-date"]', 'input[placeholder*="MM"]', 'input[aria-label*="Expiration"]'];
 const STRIPE_CVC_SELECTORS = ["input#cardCvc", 'input[name="cvc"]', 'input[placeholder*="CVC"]', 'input[aria-label*="CVC"]'];
 const STRIPE_NAME_SELECTORS = ["input#billingName", 'input[name="name"]', 'input[placeholder*="Name"]'];
-
-const EXTRACT_ELEMENTS_SCRIPT = `
-(() => {
-  function getXPath(element) {
-    if (element.id) {
-      return \`//*[@id="\${element.id}"]\`;
-    }
-    const paths = [];
-    let current = element;
-    while (current && current.nodeType === Node.ELEMENT_NODE) {
-      let index = 0;
-      let hasSiblingWithSameTag = false;
-
-      let prevSibling = current.previousSibling;
-      while (prevSibling) {
-        if (prevSibling.nodeType !== Node.DOCUMENT_TYPE_NODE && prevSibling.nodeName === current.nodeName) {
-          index++;
-          hasSiblingWithSameTag = true;
-        }
-        prevSibling = prevSibling.previousSibling;
-      }
-
-      let nextSibling = current.nextSibling;
-      while (nextSibling) {
-        if (nextSibling.nodeName === current.nodeName) {
-          hasSiblingWithSameTag = true;
-          break;
-        }
-        nextSibling = nextSibling.nextSibling;
-      }
-
-      const tagName = current.nodeName.toLowerCase();
-      const pathIndex = hasSiblingWithSameTag ? \`[\${index + 1}]\` : "";
-      paths.unshift(tagName + pathIndex);
-      current = current.parentNode;
-    }
-    return paths.length ? "/" + paths.join("/") : "";
-  }
-
-  function isVisible(el) {
-    const rect = el.getBoundingClientRect();
-    if (rect.width === 0 || rect.height === 0) return false;
-    const style = window.getComputedStyle(el);
-    if (style.display === "none" || style.visibility === "hidden" || Number.parseFloat(style.opacity) === 0) return false;
-    return true;
-  }
-
-  function isDisabled(el) {
-    if ('disabled' in el && el.disabled) return true;
-    if (el.getAttribute("aria-disabled") === "true") return true;
-    if (el.classList.contains("disabled")) return true;
-    return false;
-  }
-
-  function getCleanText(el) {
-    let text = (el.innerText || el.textContent || "").trim();
-    if (!text && el.tagName === "INPUT") {
-      text = el.value || "";
-    }
-    if (text.length > 80) {
-      text = text.substring(0, 77) + "...";
-    }
-    return text;
-  }
-
-  function extractElementData(el) {
-    return {
-      tag: el.tagName.toLowerCase(),
-      type: el.type || "",
-      text: getCleanText(el),
-      placeholder: el.placeholder || el.getAttribute("aria-label") || "",
-      name: el.getAttribute("name") || el.getAttribute("id") || "",
-      role: el.getAttribute("role") || "",
-      xpath: getXPath(el)
-    };
-  }
-
-  const results = [];
-  const selector = 'button, a, input, select, textarea, [role="button"], [onclick]';
-  const nodes = document.querySelectorAll(selector);
-
-  nodes.forEach((node) => {
-    const el = node;
-    if (!isVisible(el) || isDisabled(el)) return;
-    results.push(extractElementData(el));
-  });
-
-  return results;
-})();
-`;
 
 export class StagehandBrowserHelper {
   private stagehand: Stagehand | null = null;
@@ -568,7 +469,93 @@ export class StagehandBrowserHelper {
 
     while (attempts < maxAttempts) {
       try {
-        elementsData = await page.evaluate(EXTRACT_ELEMENTS_SCRIPT);
+        elementsData = await page.evaluate(() => {
+          function getXPath(element: Element): string {
+            if (element.id) {
+              return `//*[@id="${element.id}"]`;
+            }
+            const paths: string[] = [];
+            let current: Node | null = element;
+            while (current && current.nodeType === Node.ELEMENT_NODE) {
+              let index = 0;
+              let hasSiblingWithSameTag = false;
+
+              let prevSibling = current.previousSibling;
+              while (prevSibling) {
+                if (prevSibling.nodeType !== Node.DOCUMENT_TYPE_NODE && prevSibling.nodeName === current.nodeName) {
+                  index++;
+                  hasSiblingWithSameTag = true;
+                }
+                prevSibling = prevSibling.previousSibling;
+              }
+
+              let nextSibling = current.nextSibling;
+              while (nextSibling) {
+                if (nextSibling.nodeName === current.nodeName) {
+                  hasSiblingWithSameTag = true;
+                  break;
+                }
+                nextSibling = nextSibling.nextSibling;
+              }
+
+              const tagName = current.nodeName.toLowerCase();
+              const pathIndex = hasSiblingWithSameTag ? `[${index + 1}]` : "";
+              paths.unshift(tagName + pathIndex);
+              current = current.parentNode;
+            }
+            return paths.length ? "/" + paths.join("/") : "";
+          }
+
+          function isVisible(el: HTMLElement): boolean {
+            const rect = el.getBoundingClientRect();
+            if (rect.width === 0 || rect.height === 0) return false;
+            const style = window.getComputedStyle(el);
+            if (style.display === "none" || style.visibility === "hidden" || Number.parseFloat(style.opacity) === 0) return false;
+            return true;
+          }
+
+          function isDisabled(el: HTMLElement): boolean {
+            if ('disabled' in el && (el as any).disabled) return true;
+            if (el.getAttribute("aria-disabled") === "true") return true;
+            if (el.classList.contains("disabled")) return true;
+            return false;
+          }
+
+          function getCleanText(el: HTMLElement): string {
+            let text = (el.innerText || el.textContent || "").trim();
+            if (!text && el.tagName === "INPUT") {
+              text = (el as HTMLInputElement).value || "";
+            }
+            if (text.length > 80) {
+              text = text.substring(0, 77) + "...";
+            }
+            return text;
+          }
+
+          function extractElementData(el: HTMLElement): ElementData {
+            return {
+              tag: el.tagName.toLowerCase(),
+              type: (el as HTMLInputElement).type || "",
+              text: getCleanText(el),
+              placeholder: (el as HTMLInputElement).placeholder || el.getAttribute("aria-label") || "",
+              name: el.getAttribute("name") || el.getAttribute("id") || "",
+              role: el.getAttribute("role") || "",
+              xpath: getXPath(el)
+            };
+          }
+
+          const results: ElementData[] = [];
+          const selector = 'button, a, input, select, textarea, [role="button"], [onclick]';
+          const nodes = document.querySelectorAll(selector);
+
+          nodes.forEach((node) => {
+            const el = node as HTMLElement;
+            if (!isVisible(el) || isDisabled(el)) return;
+            results.push(extractElementData(el));
+          });
+
+          return results;
+        });
         break; // Success, break out of loop
       } catch (err) {
         attempts++;
@@ -793,11 +780,10 @@ export class StagehandBrowserHelper {
       return true;
     }
 
-    console.log("Fallback to Stagehand act for Stripe...");
+    console.log("Playwright direct fill was incomplete. Falling back to Stagehand act...");
     try {
-      await page.act({
-        action: `Fill the credit card checkout form with this testing card information: card number ${card}, expiry ${expiry}, cvc ${cvc}, and name ${name}. Submit the form if there is a button.`
-      });
+      const instruction = `Fill the credit card number with "${card}", expiration date with "${expiry}", CVC/CVV with "${cvc}", and cardholder name with "${name}"`;
+      await page.act(instruction);
       return true;
     } catch (err) {
       console.error("Stagehand fallback act for Stripe failed:", err);
