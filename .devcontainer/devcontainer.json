@@ -1,6 +1,5 @@
 {
   "name": "Node.js",
-  "remoteUser": "node",
   "runArgs": [
     "--sysctl",
     "net.ipv6.conf.all.disable_ipv6=1",
@@ -10,12 +9,13 @@
   "build": {
     "dockerfile": "Dockerfile"
   },
+  "remoteUser": "node",
   "features": {
     "ghcr.io/devcontainers/features/common-utils:2": {
       "installZsh": true,
       "installOhMyZsh": true,
       "upgradePackages": true,
-      "username": "node"
+      "username": "vscode"
     },
     "ghcr.io/devcontainers-extra/features/apt-packages:1": {
       "packages": "socat"
