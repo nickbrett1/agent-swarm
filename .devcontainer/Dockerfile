@@ -16,6 +16,8 @@ RUN if [ -d "$HOME/.oh-my-zsh" ]; then rm -rf "$HOME/.oh-my-zsh"; fi \
     && curl https://cursor.com/install -fsS | bash \
     && uv tool install --python 3.11 git+https://github.com/github/spec-kit.git
 
+COPY --chown=node:node .zshrc .p10k.zsh /home/node/
+
 RUN mkdir -p $HOME/.wrangler
 
 USER root
@@ -30,5 +32,8 @@ RUN curl -fsSL https://github.com/nickbrett1.keys > /home/node/.ssh/authorized_k
 RUN chown -R node:node /home/node/.ssh \
     && chmod 700 /home/node/.ssh \
     && chmod 600 /home/node/.ssh/authorized_keys
+
+# Ensure zsh is the default shell for the node user
+RUN chsh -s /usr/bin/zsh node
 
 USER node

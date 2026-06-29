@@ -1,5 +1,6 @@
 {
   "name": "Node.js",
+  "remoteUser": "node",
   "runArgs": [
     "--sysctl",
     "net.ipv6.conf.all.disable_ipv6=1",
@@ -14,7 +15,7 @@
       "installZsh": true,
       "installOhMyZsh": true,
       "upgradePackages": true,
-      "username": "vscode"
+      "username": "node"
     },
     "ghcr.io/devcontainers-extra/features/apt-packages:1": {
       "packages": "socat"
