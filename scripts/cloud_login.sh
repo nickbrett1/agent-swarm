@@ -9,6 +9,21 @@ PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 # Change to the project root directory so that relative paths work correctly
 cd "$PROJECT_ROOT"
 
+# Tailscale login
+if command -v tailscale &> /dev/null; then
+  if ! pgrep -x tailscaled > /dev/null; then
+    echo "INFO: Starting Tailscale daemon..."
+    sudo tailscaled --state=/var/lib/tailscale/tailscaled.state > /dev/null 2>&1 &
+    sleep 2
+  fi
+  if ! sudo tailscale status &> /dev/null; then
+    echo "INFO: Logging into Tailscale..."
+    sudo tailscale up --hostname=agent-swarm
+  else
+    echo "✅ Already logged in to Tailscale."
+  fi
+fi
+
 
 # Doppler login/setup
 if command -v doppler &> /dev/null; then

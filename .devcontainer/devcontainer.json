@@ -1,8 +1,10 @@
 {
-  "name": "Python",
+  "name": "Node.js",
   "runArgs": [
     "--sysctl",
-    "net.ipv6.conf.all.disable_ipv6=1"
+    "net.ipv6.conf.all.disable_ipv6=1",
+    "--cap-add=NET_ADMIN",
+    "--device=/dev/net/tun"
   ],
   "build": {
     "dockerfile": "Dockerfile"
@@ -17,6 +19,7 @@
     "ghcr.io/devcontainers-extra/features/apt-packages:1": {
       "packages": "socat"
     },
+    "ghcr.io/devcontainers/features/python:1": {},
     "ghcr.io/devcontainers/features/node:1": {
       "version": "lts"
     },
@@ -25,9 +28,9 @@
     }
   },
   "mounts": [
-    "source=wrangler-config,target=/home/vscode/.wrangler,type=volume",
-    "source=doppler-config,target=/home/vscode/.doppler,type=volume",
-    "source=gemini-cli-settings,target=/home/vscode/.gemini,type=volume"
+    "source=wrangler-config,target=/home/node/.wrangler,type=volume",
+    "source=doppler-config,target=/home/node/.doppler,type=volume",
+    "source=gemini-cli-settings,target=/home/node/.gemini,type=volume"
   ],
   "forwardPorts": [
     8788,
@@ -67,6 +70,11 @@
         "humao.rest-client",
         "alefragnani.project-manager",
         "mutantdino.resourcemonitor",
+        "bradlc.vscode-tailwindcss",
+        "unifiedjs.vscode-mdx",
+        "ecmel.vscode-html-css",
+        "GraphQL.vscode-graphql-syntax",
+        "ms-azuretools.vscode-docker",
         "SonarSource.sonarlint-vscode",
         "redhat.java",
         "vscjava.vscode-java-debug",

@@ -10,6 +10,16 @@
         "chrome-devtools-mcp"
       ]
     },
+    "fintechnick": {
+      "command": "sh",
+      "args": [
+        "-c",
+        "npx -y mcp-remote https://www.fintechnick.com/api/mcp --header \"Authorization: Bearer $FINTECHNICK_MCP\""
+      ],
+      "env": {
+        "FINTECHNICK_MCP": "$FINTECHNICK_MCP"
+      }
+    },
     "sonarqube": {
       "command": "npx",
       "args": [
@@ -17,8 +27,8 @@
         "sonarqube-mcp-server"
       ],
       "env": {
-        "SONARQUBE_TOKEN": "$SONARQUBE_TOKEN",
-        "SONARQUBE_ORGANIZATION": "bem"
+        "SONAR_TOKEN": "$SONAR_TOKEN",
+        "SONAR_HOST_URL": "$SONAR_HOST_URL"
       }
     },
     "circleci": {

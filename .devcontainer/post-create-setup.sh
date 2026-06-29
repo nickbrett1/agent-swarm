@@ -8,6 +8,9 @@ CURRENT_USER=$(whoami)
 USER_HOME_DIR="$HOME"
 
 echo "INFO: Ensuring wrangler directory permissions..."
+
+echo "INFO: Ensuring SSH service is running..."
+sudo service ssh start
 mkdir -p "$USER_HOME_DIR/.wrangler"
 sudo chown -R "$CURRENT_USER:$CURRENT_USER" "$USER_HOME_DIR/.wrangler"
 
@@ -18,6 +21,7 @@ sudo chown -R "$CURRENT_USER:$CURRENT_USER" "$USER_HOME_DIR/.doppler"
 echo "INFO: Ensuring gemini directory permissions..."
 mkdir -p "$USER_HOME_DIR/.gemini"
 sudo chown -R "$CURRENT_USER:$CURRENT_USER" "$USER_HOME_DIR/.gemini"
+
 
 echo "INFO: Creating Oh My Zsh custom directories..."
 mkdir -p "$USER_HOME_DIR/.oh-my-zsh/custom/themes" "$USER_HOME_DIR/.oh-my-zsh/custom/plugins"
@@ -37,6 +41,9 @@ if [ -f "/workspaces/agent-swarm/.devcontainer/.p10k.zsh" ]; then
 else
     echo "INFO: /workspaces/agent-swarm/.devcontainer/.p10k.zsh not found, skipping copy."
 fi
+
+echo "INFO: Installing uv tool..."
+curl -LsSf https://astral.sh/uv/install.sh | sudo env CARGO_HOME=/usr/local UV_INSTALL_DIR=/usr/local/bin sh
 
 echo "INFO: Installing Cursor CLI..."
 curl https://cursor.com/install -fsS | bash
@@ -67,10 +74,23 @@ sudo chown -R "$CURRENT_USER:$CURRENT_USER" "$USER_HOME_DIR/.agy"
 echo "Setup bridget to access Chrome DevTools Protocol over a secure tunnel..."
 socat TCP-LISTEN:9222,fork,bind=127.0.0.1 TCP:host.docker.internal:9222 &
 
-echo "INFO: Configuring git pre-commit hook..."
-mkdir -p /workspaces/agent-swarm/.git/hooks
-printf '#!/bin/sh\npython3 scripts/check-secrets.py\n' > /workspaces/agent-swarm/.git/hooks/pre-commit
-chmod +x /workspaces/agent-swarm/.git/hooks/pre-commit
+echo "INFO: Checking Tailscale status..."
+if ! command -v tailscale &> /dev/null; then
+    echo "INFO: Installing Tailscale..."
+    curl -fsSL https://tailscale.com/install.sh | sh
+fi
+
+if ! pgrep -x tailscaled > /dev/null; then
+    echo "INFO: Starting Tailscale daemon..."
+    sudo tailscaled --state=/var/lib/tailscale/tailscaled.state &
+fi
+
+echo "INFO: Checking Nanobanana MCP installation..."
+if [ -f "webapp/scripts/install-nanobanana.sh" ]; then
+    bash webapp/scripts/install-nanobanana.sh
+elif [ -f "scripts/install-nanobanana.sh" ]; then
+    bash scripts/install-nanobanana.sh
+fi
 
 echo -e "\nINFO: Custom container setup script finished."
 echo -e "\n⚠️  To complete cloud login, run:"
