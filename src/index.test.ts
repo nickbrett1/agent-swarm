@@ -9,7 +9,7 @@ vi.mock("cloudflare:workers", () => ({
   },
 }));
 
-import workerDefault, { ShopperAgent, verifyHmacSignature } from './index.ts';
+import workerDefault, { ShopperAgent, verifyHmacSignature } from './index';
 
 vi.mock('@cloudflare/puppeteer', () => ({
   default: {
