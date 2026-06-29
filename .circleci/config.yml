@@ -1,11 +1,14 @@
 version: 2.1
 orbs:
   node: circleci/node@5.0.2
-  ggshield: gitguardian/ggshield@1
+  doppler: conpago/doppler@1.3.5
+  sonarcloud: sonarsource/sonarcloud@2.0.0
 
 jobs:
   build:
     executor: node/default
+    environment:
+      SONAR_SCANNER_OPTS: "-Dproject.settings=.sonarcloud.properties"
     steps:
       - checkout
       - restore_cache:
@@ -25,6 +28,7 @@ jobs:
             - node_modules
           key: v1-deps-{{ checksum "package.json" }}
 
+      - doppler/install
       - run:
           name: Setup Wrangler Config
           command: |
@@ -33,8 +37,10 @@ jobs:
       - run:
           name: Build
           command: npm run build
+      - sonarcloud/scan:
+          context: common
       - run:
-          name: Run Tests
+          name: Test
           command: npm run test
 
 
@@ -43,7 +49,10 @@ jobs:
     parameters:
       environment:
         type: string
-        default: ""
+        default: "default"
+      doppler_config:
+        type: string
+        default: "prod"
     steps:
       - checkout
       - restore_cache:
@@ -62,46 +71,65 @@ jobs:
           paths:
             - node_modules
           key: v1-deps-{{ checksum "package.json" }}
+      - doppler/install
       - run:
           name: Setup Wrangler Config
+          environment:
+            DOPPLER_CONFIG: << parameters.doppler_config >>
           command: |
             chmod +x scripts/setup-wrangler-config.sh
-            ./scripts/setup-wrangler-config.sh
+            ./scripts/setup-wrangler-config.sh "$DOPPLER_CONFIG"
+      - run:
+          name: Sync Doppler Secrets to Cloudflare
+          environment:
+            CLOUDFLARE_ENV: << parameters.environment >>
+            DOPPLER_CONFIG: << parameters.doppler_config >>
+          command: |
+            chmod +x scripts/sync-doppler-secrets.sh
+            if [ "$CLOUDFLARE_ENV" = "default" ] || [ -z "$CLOUDFLARE_ENV" ]; then
+              ./scripts/sync-doppler-secrets.sh --config "$DOPPLER_CONFIG" --env "$CLOUDFLARE_ENV"
+            else
+              if ! ./scripts/sync-doppler-secrets.sh --config "$DOPPLER_CONFIG" --env "$CLOUDFLARE_ENV"; then
+                echo "⚠️  Warning: Failed to sync secrets to Cloudflare preview."
+              fi
+            fi
       - run:
           name: Build
           command: npm run build
       - run:
           name: Deploy to Cloudflare Workers
-          command: npx wrangler deploy --env "<< parameters.environment >>"
+          environment:
+            CLOUDFLARE_ENV: << parameters.environment >>
+          command: |
+            if [ "$CLOUDFLARE_ENV" = "default" ] || [ -z "$CLOUDFLARE_ENV" ]; then
+              npx wrangler deploy
+            else
+              npx wrangler deploy --env "$CLOUDFLARE_ENV"
+            fi
 workflows:
   build-and-test:
     jobs:
-      - ggshield/scan:
-          name: ggshield-scan
-          context: common
-          base_revision: << pipeline.git.base_revision >>
-          revision: <<pipeline.git.revision>>
-
       - build:
           context: common
-          requires:
-            - ggshield-scan
+
 
       - deploy-to-cloudflare:
-          name: deploy-preview
           context: common
+          environment: "default"
+          doppler_config: "prod"
+          requires:
+            - build
+          filters:
+            branches:
+              only: main
+      - deploy-to-cloudflare:
+          context: common
+          name: deploy-to-cloudflare-preview
           environment: "preview"
+          doppler_config: "stg"
           requires:
             - build
           filters:
             branches:
               ignore: main
 
-      - deploy-to-cloudflare:
-          name: deploy-production
-          context: common
-          requires:
-            - build
-          filters:
-            branches:
-              only: main

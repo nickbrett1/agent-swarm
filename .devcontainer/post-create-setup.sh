@@ -42,6 +42,14 @@ else
     echo "INFO: /workspaces/agent-swarm/.devcontainer/.p10k.zsh not found, skipping copy."
 fi
 
+if [ -f "/workspaces/agent-swarm/.devcontainer/.tmux.conf" ]; then
+    echo "INFO: Copying .tmux.conf to $USER_HOME_DIR/.tmux.conf"
+    cp "/workspaces/agent-swarm/.devcontainer/.tmux.conf" "$USER_HOME_DIR/.tmux.conf"
+    sudo chown "$CURRENT_USER:$CURRENT_USER" "$USER_HOME_DIR/.tmux.conf"
+else
+    echo "INFO: /workspaces/agent-swarm/.devcontainer/.tmux.conf not found, skipping copy."
+fi
+
 echo "INFO: Installing uv tool..."
 curl -LsSf https://astral.sh/uv/install.sh | sudo env CARGO_HOME=/usr/local UV_INSTALL_DIR=/usr/local/bin sh
 

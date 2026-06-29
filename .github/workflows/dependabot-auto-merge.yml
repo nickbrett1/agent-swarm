@@ -1,77 +1,24 @@
 name: Dependabot auto-merge
-on:
-  pull_request_target:
-  check_suite:
-    types: [completed]
+on: pull_request
 
 permissions:
   contents: write
   pull-requests: write
-  checks: read
-  statuses: read
 
 jobs:
-  dependabot-merge:
+  dependabot:
     runs-on: ubuntu-latest
+    if: ${{ github.actor == 'dependabot[bot]' }}
     steps:
-      - uses: actions/checkout@v7
-      - name: Check status and merge
-        run: |
-          if [ -n "$MYTOKEN" ]; then
-            export GH_TOKEN="$MYTOKEN"
-          else
-            export GH_TOKEN="$GITHUB_TOKEN"
-          fi
+      - name: Dependabot metadata
+        id: metadata
+        uses: dependabot/fetch-metadata@v3
+        with:
+          github-token: "${{ secrets.GITHUB_TOKEN }}"
 
-          PR_URL=""
-          if [ "${{ github.event_name }}" == "pull_request_target" ]; then
-            PR_URL="${{ github.event.pull_request.html_url }}"
-          elif [ "${{ github.event_name }}" == "check_suite" ]; then
-            BRANCH="${{ github.event.check_suite.head_branch }}"
-          fi
-
-          if [ -z "$PR_URL" ] && [ -n "$BRANCH" ]; then
-            PR_URL=$(gh pr list --head "$BRANCH" --author "app/dependabot" --json url --jq '.[0].url // empty')
-          fi
-
-          if [ -z "$PR_URL" ] && [ -n "$BRANCH" ]; then
-            PR_URL=$(gh pr list --head "$BRANCH" --author "dependabot[bot]" --json url --jq '.[0].url // empty')
-          fi
-
-          if [ -z "$PR_URL" ] || [ "$PR_URL" = "null" ]; then
-            echo "No Dependabot PR found. Skipping."
-            exit 0
-          fi
-
-          # Double check author just in case
-          IS_DEPENDABOT=$(gh pr view "$PR_URL" --json author --jq '.author.login == "dependabot[bot]" or .author.login == "app/dependabot"')
-          if [ "$IS_DEPENDABOT" != "true" ]; then
-            echo "PR is not from Dependabot. Skipping."
-            exit 0
-          fi
-
-          echo "Processing PR: $PR_URL"
-
-          # Get checks status
-          CHECKS=$(gh pr checks "$PR_URL" --json name,bucket)
-
-          # Check for failures (excluding this workflow's job, which is named 'dependabot-merge' and check suite 'Dependabot auto-merge')
-          FAILED=$(echo "$CHECKS" | jq '[.[] | select(.name != "dependabot-merge" and .name != "Dependabot auto-merge" and (.bucket == "fail" or .bucket == "cancel"))] | length')
-          if [ "$FAILED" -gt 0 ]; then
-            echo "Some checks failed. Skipping merge."
-            exit 0
-          fi
-
-          # Check for pending/running (excluding this workflow's job)
-          PENDING=$(echo "$CHECKS" | jq '[.[] | select(.name != "dependabot-merge" and .name != "Dependabot auto-merge" and .bucket == "pending")] | length')
-          if [ "$PENDING" -gt 0 ]; then
-             echo "Some checks are still pending. Skipping merge."
-             exit 0
-          fi
-
-          echo "All checks passed. Merging..."
-          gh pr merge "$PR_URL" --merge
+      - name: Enable auto-merge for Dependabot PRs
+        if: ${{ steps.metadata.outputs.update-type == 'version-update:semver-minor' || steps.metadata.outputs.update-type == 'version-update:semver-patch' }}
+        run: gh pr merge --auto --merge "$PR_URL" || gh pr comment "$PR_URL" --body "@dependabot merge"
         env:
           PR_URL: ${{github.event.pull_request.html_url}}
-          MYTOKEN: ${{secrets.MYTOKEN}}
-          GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
+          GITHUB_TOKEN: ${{secrets.MYTOKEN}}

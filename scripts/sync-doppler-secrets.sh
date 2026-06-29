@@ -11,9 +11,9 @@ WEBAPP_DIR="$(dirname "$SCRIPT_DIR")"
 cd "$WEBAPP_DIR"
 
 # Defaults
-DOPPLER_PROJECT="webapp"
+DOPPLER_PROJECT="agent-swarm"
 DOPPLER_CONFIG="prod"
-CLOUDFLARE_ENV="production"
+CLOUDFLARE_ENV=""
 
 # Parse optional arguments to override defaults
 while [[ "$#" -gt 0 ]]; do
@@ -24,9 +24,9 @@ while [[ "$#" -gt 0 ]]; do
         -h|--help)
             echo "Usage: $0 [options]"
             echo "Options:"
-            echo "  --project <name>      Doppler project name (default: webapp)"
+            echo "  --project <name>      Doppler project name (default: agent-swarm)"
             echo "  --config <name>       Doppler config name (default: prod)"
-            echo "  --env <name>          Cloudflare Wrangler environment (default: production)"
+            echo "  --env <name>          Cloudflare Wrangler environment (default: primary Worker, use 'default' to omit)"
             exit 0
             ;;
         *) echo "Unknown parameter: $1"; exit 1 ;;
@@ -68,14 +68,30 @@ echo "🔄 Fetching secrets from Doppler ($DOPPLER_PROJECT/$DOPPLER_CONFIG)..."
 
 # Fetch secrets, compute values, and format for Cloudflare
 cleanup() {
-    rm -f doppler_secrets.json doppler_secrets_batches.json
+    rm -f doppler_secrets_common.json doppler_secrets_project.json doppler_secrets.json doppler_secrets_batches.json doppler_secrets_batch_temp.json
 }
 trap cleanup EXIT
 
-if ! doppler secrets --json $DOPPLER_ARGS | jq -c 'with_entries(.value = .value.computed)' > doppler_secrets.json; then
+# Fetch common secrets first
+echo "{}" > doppler_secrets_common.json
+if [[ -z "$DOPPLER_TOKEN" || ! "$DOPPLER_TOKEN" =~ ^dp\.st\. ]]; then
+    echo "🔄 Fetching common secrets from Doppler (common/$DOPPLER_CONFIG)..."
+    if ! doppler secrets --json --project common --config "$DOPPLER_CONFIG" 2>/dev/null | jq -c 'with_entries(.value = .value.computed)' > doppler_secrets_common.json; then
+        echo "⚠️ Warning: Could not fetch common secrets (they may not exist or access is denied)."
+        echo "{}" > doppler_secrets_common.json
+    fi
+else
+    echo "⚠️ Warning: Using a service token. Skipping common secrets fetch."
+fi
+
+echo "🔄 Fetching project secrets from Doppler ($DOPPLER_PROJECT/$DOPPLER_CONFIG)..."
+if ! doppler secrets --json $DOPPLER_ARGS | jq -c 'with_entries(.value = .value.computed)' > doppler_secrets_project.json; then
     echo "❌ Error: Failed to fetch secrets from Doppler."
     exit 1
 fi
+
+# Merge common and project secrets, project overrides common
+jq -s '.[0] * .[1]' doppler_secrets_common.json doppler_secrets_project.json > doppler_secrets.json
 
 if [ ! -s doppler_secrets.json ] || [ "$(cat doppler_secrets.json)" = "{}" ]; then
     echo "⚠️ Warning: No secrets found to sync."
@@ -85,19 +101,24 @@ fi
 # Split into batches of 20 (Wrangler bulk upload limit)
 jq -c 'to_entries | _nwise(20) | from_entries' doppler_secrets.json > doppler_secrets_batches.json
 
-echo "🚀 Syncing secrets to Cloudflare..."
+# Build wrangler environment arguments
+WRANGLER_ARGS=""
+ENV_DISPLAY_NAME="primary Worker"
+if [ -n "$CLOUDFLARE_ENV" ] && [ "$CLOUDFLARE_ENV" != "default" ]; then
+    WRANGLER_ARGS="--env $CLOUDFLARE_ENV"
+    ENV_DISPLAY_NAME="environment: $CLOUDFLARE_ENV"
+fi
+
+echo "🚀 Syncing secrets to Cloudflare ($ENV_DISPLAY_NAME)..."
 SUCCESS=true
 while read -r batch; do
-    if [ "$CLOUDFLARE_ENV" = "default" ] || [ -z "$CLOUDFLARE_ENV" ]; then
-        echo "$batch" | npx wrangler secret bulk || SUCCESS=false
-    else
-        echo "$batch" | npx wrangler secret bulk --env "$CLOUDFLARE_ENV" || SUCCESS=false
-    fi
+    echo "$batch" > doppler_secrets_batch_temp.json
+    npx wrangler versions secret bulk doppler_secrets_batch_temp.json $WRANGLER_ARGS || SUCCESS=false
 done < doppler_secrets_batches.json
 
 if [ "$SUCCESS" = true ]; then
-    echo "✅ Secrets successfully synced to Cloudflare ($CLOUDFLARE_ENV)"
+    echo "✅ Secrets successfully synced to Cloudflare ($ENV_DISPLAY_NAME)"
 else
-    echo "❌ Error: Failed to sync secrets to Cloudflare ($CLOUDFLARE_ENV)"
+    echo "❌ Error: Failed to sync secrets to Cloudflare ($ENV_DISPLAY_NAME)"
     exit 1
 fi

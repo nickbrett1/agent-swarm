@@ -28,9 +28,10 @@
     }
   },
   "mounts": [
-    "source=wrangler-config,target=/home/node/.wrangler,type=volume",
-    "source=doppler-config,target=/home/node/.doppler,type=volume",
-    "source=gemini-cli-settings,target=/home/node/.gemini,type=volume"
+    "source=agent-swarm-wrangler-config,target=/home/node/.wrangler,type=volume",
+    "source=agent-swarm-doppler-config,target=/home/node/.doppler,type=volume",
+    "source=gemini-cli-settings,target=/home/node/.gemini,type=volume",
+    "source=agent-swarm-tailscale-state,target=/var/lib/tailscale,type=volume"
   ],
   "forwardPorts": [
     8788,
@@ -43,6 +44,7 @@
   "customizations": {
     "vscode": {
       "extensions": [
+        "pcassidy75.tmux-integrated",
         "google.geminicodeassist",
         "saoudrizwan.claude-dev",
         "GitHub.copilot",

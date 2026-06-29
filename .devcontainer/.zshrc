@@ -140,3 +140,42 @@ agy-dev() {
   # Execute the main command, passing along all arguments you gave to the function
   doppler run --project agent-swarm --config dev -- agy "$@"
 }
+
+# Change directory to the workspace if starting in the home directory
+if [[ "$PWD" == "$HOME" ]]; then
+  cd /workspaces/agent-swarm 2>/dev/null
+fi
+
+# Automatically start or attach to a tmux session for interactive shells
+if command -v tmux &> /dev/null && [[ -z "$TMUX" && -z "$CURSOR_TRACE_ID" && $- == *i* && -t 0 && -t 1 ]]; then
+  # Determine a session name. If we are in /workspaces/something, use that folder name. Else default to "main".
+  session_name="main"
+  if [[ "$PWD" =~ ^/workspaces/([^/]+) ]]; then
+    session_name="${match[1]}"
+  fi
+
+  if tmux has-session -t "$session_name" 2>/dev/null; then
+    # Add a new window (tab) to the existing session
+    tmux new-window -t "$session_name"
+    exit
+  else
+    # First terminal: start the main session
+    exec tmux new-session -s "$session_name"
+  fi
+fi
+
+# Automatically update environment variables from tmux session inside tmux
+tmux_update_environment() {
+  if [ -n "$TMUX" ]; then
+    eval $(tmux show-environment -s 2>/dev/null | grep -E "VSCODE|GIT|SSH")
+  fi
+}
+if [ -n "$TMUX" ]; then
+  # Run once on startup
+  tmux_update_environment
+  # Run before every command
+  autoload -Uz add-zsh-hook
+  add-zsh-hook preexec tmux_update_environment
+fi
+
+
