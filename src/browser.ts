@@ -796,7 +796,13 @@ export class StagehandBrowserHelper {
     console.log("Fallback to Stagehand act for Stripe...");
     try {
       await page.act({
-        action: `Fill the credit card checkout form with this testing card information: card number ${card}, expiry ${expiry}, cvc ${cvc}, and name ${name}. Submit the form if there is a button.`
+        action: `Fill the credit card checkout form with this testing card information: card number <card>, expiry <expiry>, cvc <cvc>, and name <name>. Submit the form if there is a button.`,
+        variables: {
+          card,
+          expiry,
+          cvc,
+          name
+        }
       });
       return true;
     } catch (err) {
