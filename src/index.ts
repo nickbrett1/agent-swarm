@@ -18,6 +18,8 @@ export interface Env {
   BROWSER_TIME_LIMIT_MOCK?: string | number;
 }
 
+const PAY_SUBMIT_REGEX = /pay|submit|complete|buy|purchase/i;
+
 export interface ShopperState {
   persona: string;
   history: string[];
@@ -170,12 +172,7 @@ export class ShopperAgent extends Agent<Env, ShopperState> {
     const element = pageData.elements.find((e: any) => e.id === decision.targetId);
     let isPayOrSubmit = false;
     if (element && element.text) {
-      const lowerText = element.text.toLowerCase();
-      isPayOrSubmit = lowerText.includes("pay") ||
-        lowerText.includes("submit") ||
-        lowerText.includes("complete") ||
-        lowerText.includes("buy") ||
-        lowerText.includes("purchase");
+      isPayOrSubmit = PAY_SUBMIT_REGEX.test(element.text);
     }
 
     const startUrl = await helper.getPageUrl();
