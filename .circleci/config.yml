@@ -9,6 +9,7 @@ jobs:
     executor: node/default
     environment:
       SONAR_SCANNER_OPTS: "-Dproject.settings=.sonarcloud.properties"
+      SONAR_TOKEN: $SONARQUBE_TOKEN
     steps:
       - checkout
       - restore_cache:
