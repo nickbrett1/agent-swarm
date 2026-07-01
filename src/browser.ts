@@ -7,6 +7,8 @@ import { AgentLLMClient } from "./agentLLMClient.js";
 
 const endpointURLString = playwrightModule.endpointURLString;
 
+const TRACKER_REGEX = /google-analytics\.com|googletagmanager\.com|doubleclick\.net|facebook\.net|hotjar\.com|mixpanel\.com|segment\.io/;
+
 function getFetchUrlString(request: any): string {
   if (typeof request === "string") {
     return request;
@@ -423,14 +425,7 @@ export class StagehandBrowserHelper {
         const resourceType = request.resourceType();
         const url = request.url();
 
-        const isTracker =
-          url.includes("google-analytics.com") ||
-          url.includes("googletagmanager.com") ||
-          url.includes("doubleclick.net") ||
-          url.includes("facebook.net") ||
-          url.includes("hotjar.com") ||
-          url.includes("mixpanel.com") ||
-          url.includes("segment.io");
+        const isTracker = TRACKER_REGEX.test(url);
 
         const isHeavyAsset =
           resourceType === "media" ||
