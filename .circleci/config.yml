@@ -9,7 +9,6 @@ jobs:
     executor: node/default
     environment:
       SONAR_SCANNER_OPTS: "-Dproject.settings=.sonarcloud.properties"
-      SONAR_TOKEN: $SONARQUBE_TOKEN
     steps:
       - checkout
       - restore_cache:
@@ -30,10 +29,6 @@ jobs:
           key: v1-deps-{{ checksum "package.json" }}
 
       - doppler/install
-      - run:
-          name: Export SonarCloud Token from Doppler
-          command: |
-            echo "export SONAR_TOKEN=\$(doppler secrets get SONARQUBE_TOKEN --project agent-swarm --config dev --plain)" >> $BASH_ENV
       - run:
           name: Setup Wrangler Config
           command: |
