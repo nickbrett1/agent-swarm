@@ -170,11 +170,30 @@ if command -v tmux &> /dev/null && [[ -z "$TMUX" && -z "$CURSOR_TRACE_ID" && $- 
   fi
 fi
 
+# Automatically update/find VS Code Remote Containers IPC and SSH auth sockets if they are missing or stale
+resolve_vscode_sockets() {
+  if [ -z "$REMOTE_CONTAINERS_IPC" ] || [ ! -S "$REMOTE_CONTAINERS_IPC" ]; then
+    local latest_ipc=$(ls -t /tmp/vscode-remote-containers-ipc-*.sock 2>/dev/null | head -n 1)
+    if [ -n "$latest_ipc" ]; then
+      export REMOTE_CONTAINERS_IPC="$latest_ipc"
+    fi
+  fi
+
+  if [ -z "$SSH_AUTH_SOCK" ] || [ ! -S "$SSH_AUTH_SOCK" ]; then
+    local latest_ssh=$(ls -t /tmp/vscode-ssh-auth-*.sock 2>/dev/null | head -n 1)
+    if [ -n "$latest_ssh" ]; then
+      export SSH_AUTH_SOCK="$latest_ssh"
+    fi
+  fi
+}
+resolve_vscode_sockets
+
 # Automatically update environment variables from tmux session inside tmux
 tmux_update_environment() {
   if [ -n "$TMUX" ]; then
     eval $(tmux show-environment -s 2>/dev/null | grep -E "VSCODE|GIT|SSH")
   fi
+  resolve_vscode_sockets
 }
 if [ -n "$TMUX" ]; then
   # Run once on startup
@@ -183,5 +202,6 @@ if [ -n "$TMUX" ]; then
   autoload -Uz add-zsh-hook
   add-zsh-hook preexec tmux_update_environment
 fi
+
 
 
