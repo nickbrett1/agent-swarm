@@ -31,6 +31,10 @@ jobs:
 
       - doppler/install
       - run:
+          name: Export SonarCloud Token from Doppler
+          command: |
+            echo "export SONAR_TOKEN=\$(doppler secrets get SONARQUBE_TOKEN --project agent-swarm --config dev --plain)" >> $BASH_ENV
+      - run:
           name: Setup Wrangler Config
           command: |
             chmod +x scripts/setup-wrangler-config.sh
