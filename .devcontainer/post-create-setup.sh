@@ -9,8 +9,31 @@ USER_HOME_DIR="$HOME"
 
 echo "INFO: Ensuring wrangler directory permissions..."
 
+echo "INFO: Persisting SSH host keys..."
+PERSISTED_SSH_DIR="/var/lib/tailscale/ssh"
+sudo mkdir -p "$PERSISTED_SSH_DIR"
+sudo chmod 700 "$PERSISTED_SSH_DIR"
+
+for keytype in rsa ecdsa ed25519; do
+    persisted_key="$PERSISTED_SSH_DIR/ssh_host_${keytype}_key"
+    if [ ! -f "$persisted_key" ]; then
+        if [ -f "/etc/ssh/ssh_host_${keytype}_key" ]; then
+            echo "INFO: Backing up generated $keytype host key to persisted volume..."
+            sudo cp "/etc/ssh/ssh_host_${keytype}_key" "$persisted_key"
+            sudo cp "/etc/ssh/ssh_host_${keytype}_key.pub" "$persisted_key.pub"
+        else
+            echo "INFO: Generating new $keytype host key in persisted volume..."
+            sudo ssh-keygen -q -N "" -t "$keytype" -f "$persisted_key"
+        fi
+    fi
+    sudo cp "$persisted_key" "/etc/ssh/ssh_host_${keytype}_key"
+    sudo cp "$persisted_key.pub" "/etc/ssh/ssh_host_${keytype}_key.pub"
+    sudo chmod 600 "/etc/ssh/ssh_host_${keytype}_key"
+    sudo chmod 644 "/etc/ssh/ssh_host_${keytype}_key.pub"
+done
+
 echo "INFO: Ensuring SSH service is running..."
-sudo service ssh start
+sudo service ssh restart
 mkdir -p "$USER_HOME_DIR/.wrangler"
 sudo chown -R "$CURRENT_USER:$CURRENT_USER" "$USER_HOME_DIR/.wrangler"
 
@@ -79,8 +102,7 @@ mkdir -p "$USER_HOME_DIR/.agy"
 printf '{\n  "selectedAuthType": "oauth-personal",\n  "general": {\n    "sessionRetention": {\n      "enabled": true,\n      "maxAge": "30d",\n      "warningAcknowledged": true\n    }\n  },\n  "ide": {\n    "hasSeenNudge": true,\n    "enabled": true\n  }\n}\n' > "$USER_HOME_DIR/.agy/settings.json"
 sudo chown -R "$CURRENT_USER:$CURRENT_USER" "$USER_HOME_DIR/.agy"
 
-echo "Setup bridget to access Chrome DevTools Protocol over a secure tunnel..."
-socat TCP-LISTEN:9222,fork,bind=127.0.0.1 TCP:host.docker.internal:9222 &
+sudo start-stop-daemon --start --background --oknodo --chuid node:node --exec /usr/bin/socat -- TCP-LISTEN:9222,fork,bind=127.0.0.1 TCP:host.docker.internal:9222
 
 echo "INFO: Checking Tailscale status..."
 if ! command -v tailscale &> /dev/null; then
@@ -90,7 +112,7 @@ fi
 
 if ! pgrep -x tailscaled > /dev/null; then
     echo "INFO: Starting Tailscale daemon..."
-    sudo tailscaled --state=/var/lib/tailscale/tailscaled.state &
+    sudo start-stop-daemon --start --background --oknodo --exec /usr/sbin/tailscaled -- --state=/var/lib/tailscale/tailscaled.state
 fi
 
 echo "INFO: Checking Nanobanana MCP installation..."

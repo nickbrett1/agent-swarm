@@ -42,6 +42,7 @@
     37677
   ],
   "postCreateCommand": ".devcontainer/post-create-setup.sh",
+  "postStartCommand": ".devcontainer/post-start-setup.sh",
   "customizations": {
     "vscode": {
       "extensions": [
