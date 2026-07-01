@@ -145,12 +145,10 @@ async function handlePatchedFetch(browser: any, originalFetch: Function, request
 function patchBrowserFetch() {
   try {
     const wEnv = workersEnv as any;
-    console.log("workersEnv status:", !!wEnv, "MYBROWSER:", wEnv ? !!wEnv.MYBROWSER : "no env", "keys:", wEnv ? Object.keys(wEnv) : []);
     if (wEnv?.MYBROWSER) {
       const browser = wEnv.MYBROWSER;
       const originalFetch = browser.fetch;
       if (originalFetch && !originalFetch.__isPatched) {
-        console.log("Attempting to patch browser.fetch directly...");
         const patchedFetch = Object.assign(
           async function(request: any, init?: any) {
             return handlePatchedFetch(browser, originalFetch, request, init);
@@ -158,7 +156,6 @@ function patchBrowserFetch() {
           { __isPatched: true }
         );
         browser.fetch = patchedFetch;
-        console.log("browser.fetch patched directly successfully!");
       }
     }
   } catch (e) {
