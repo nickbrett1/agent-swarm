@@ -2,7 +2,6 @@ import { Stagehand } from "@browserbasehq/stagehand";
 import * as playwrightModule from "@cloudflare/playwright";
 import type { BrowserType } from "@cloudflare/playwright";
 import puppeteer from "@cloudflare/puppeteer";
-import { env as workersEnv } from "cloudflare:workers";
 import { AgentLLMClient } from "./agentLLMClient.js";
 
 const endpointURLString = playwrightModule.endpointURLString;
@@ -98,7 +97,7 @@ if (chromium?.connectOverCDP) {
           args[0] = urlObj.toString();
         }
       } catch (e) {
-        // ignore invalid URL
+        console.warn("Ignored invalid endpointURL string in connectOverCDP wrapper:", e);
       }
     } else if (args.length > 0 && typeof args[0] === 'object' && args[0] !== null) {
       const endpointURL = args[0].endpointURL || args[0].wsEndpoint;
@@ -112,7 +111,7 @@ if (chromium?.connectOverCDP) {
             if (args[0].wsEndpoint) args[0].wsEndpoint = urlObj.toString();
           }
         } catch (e) {
-          // ignore
+          console.warn("Ignored invalid endpointURL property in connectOverCDP wrapper:", e);
         }
       }
     }
