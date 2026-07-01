@@ -67,7 +67,7 @@ async function fillStripeLocators(frames: any[], card: string, expiry: string, c
   const cvcSelector = STRIPE_CVC_SELECTORS.join(',');
   const nameSelector = STRIPE_NAME_SELECTORS.join(',');
 
-  for (const frame of frames) {
+  await Promise.all(frames.map(async (frame) => {
     try {
       const cardLoc = frame.locator(cardSelector);
       if (await cardLoc.count() > 0) {
@@ -95,7 +95,7 @@ async function fillStripeLocators(frames: any[], card: string, expiry: string, c
     } catch (frameErr) {
       console.warn("Ignored frame specific error while filling Stripe:", frameErr);
     }
-  }
+  }));
 
   return { cardFilled, expiryFilled, cvcFilled, nameFilled };
 }
