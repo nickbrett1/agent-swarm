@@ -73,6 +73,7 @@ function findNewestPage(context: any, currentPage: any): any {
 
 
 
+
 // Intercept playwright's chromium.connectOverCDP to ensure that when it connects to a remote browser,
 // it always creates a browser context if none exists.
 let lastCDPError: Error | null = null;
