@@ -9,16 +9,11 @@ jobs:
     executor: node/default
     environment:
       SONAR_SCANNER_OPTS: "-Dproject.settings=.sonarcloud.properties"
-      SONAR_TOKEN: $SONARQUBE_TOKEN
     steps:
       - checkout
       - run:
-          name: Debug Environment Variable Names
-          command: |
-            env | cut -d= -f1 | sort
-            echo "--- Testing SONARQUBE_TOKEN ---"
-            curl -s -u "$SONARQUBE_TOKEN:" https://sonarcloud.io/api/users/current | jq -c '{isLoggedIn: .isLoggedIn, login: .login}'
-            curl -s -u "$SONARQUBE_TOKEN:" "https://sonarcloud.io/api/organizations/search?member=true" | jq -c '.organizations[] | {key: .key, name: .name}'
+          name: Export SonarCloud Token
+          command: echo "export SONAR_TOKEN=\$SONARQUBE_TOKEN" >> $BASH_ENV
       - restore_cache:
           keys:
             - v1-deps-{{ checksum "package.json" }}
