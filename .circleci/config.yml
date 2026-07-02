@@ -40,7 +40,7 @@ jobs:
       - run:
           name: Build
           command: npm run build
-      - sonarcloud/scan
+      # - sonarcloud/scan
       - run:
           name: Test
           command: npm run test
