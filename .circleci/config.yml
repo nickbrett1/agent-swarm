@@ -96,11 +96,10 @@ jobs:
           command: npm run build
       - run:
           name: Deploy to Cloudflare Workers
-          environment:
-            CLOUDFLARE_ENV: << parameters.environment >>
           command: |
-            if [ "$CLOUDFLARE_ENV" = "preview" ]; then
-              npx wrangler deploy --env "$CLOUDFLARE_ENV"
+            ENV_VAL="<< parameters.environment >>"
+            if [ "$ENV_VAL" = "preview" ]; then
+              npx wrangler deploy --env "$ENV_VAL"
             else
               npx wrangler deploy
             fi
