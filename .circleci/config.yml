@@ -12,6 +12,9 @@ jobs:
       SONAR_TOKEN: $SONARQUBE_TOKEN
     steps:
       - checkout
+      - run:
+          name: Debug Environment Variable Names
+          command: env | cut -d= -f1 | sort
       - restore_cache:
           keys:
             - v1-deps-{{ checksum "package.json" }}
