@@ -2,61 +2,12 @@ import { Stagehand } from "@browserbasehq/stagehand";
 import * as playwrightModule from "@cloudflare/playwright";
 import type { BrowserType } from "@cloudflare/playwright";
 import puppeteer from "@cloudflare/puppeteer";
-import { env as workersEnv } from "cloudflare:workers";
 import { AgentLLMClient } from "./agentLLMClient.js";
 
 const endpointURLString = playwrightModule.endpointURLString;
 
 const TRACKER_REGEX = /google-analytics\.com|googletagmanager\.com|doubleclick\.net|facebook\.net|hotjar\.com|mixpanel\.com|segment\.io/;
 
-function getFetchUrlString(request: any): string {
-  if (typeof request === "string") {
-    return request;
-  } else if (request && typeof request === "object") {
-    if (typeof request?.toString === "function") {
-      return request.toString();
-    } else {
-      return request?.url || "";
-    }
-  }
-  return "";
-}
-
-function getFetchMethod(request: any, init?: any): string {
-  if (init?.method) {
-    return init.method;
-  } else if (request && typeof request === "object" && "method" in request) {
-    return request?.method || "GET";
-  }
-  return "GET";
-}
-
-function stripFetchQueryParameters(request: any, urlStr: string, method: string): { newRequest: any, newUrlStr: string } {
-  let newRequest = request;
-  let newUrlStr = urlStr;
-
-  if (urlStr.includes("/v1/devtools/browser/") && method.toUpperCase() !== "DELETE") {
-    try {
-      const urlObj = new URL(urlStr);
-      if (urlObj.search !== "") {
-        console.log(`[MYBROWSER.fetch] Stripping query parameters from upgrade request: ${urlObj.search}`);
-        urlObj.search = "";
-        if (typeof request === "string") {
-          newRequest = urlObj.toString();
-        } else if (request instanceof URL) {
-          newRequest = urlObj;
-        } else {
-          newRequest = urlObj;
-        }
-        newUrlStr = urlObj.toString();
-      }
-    } catch (e) {
-      console.error("[MYBROWSER.fetch] Failed to strip query parameters:", e);
-    }
-  }
-
-  return { newRequest, newUrlStr };
-}
 
 async function fillStripeLocators(frames: any[], card: string, expiry: string, cvc: string, name: string): Promise<{ cardFilled: boolean, expiryFilled: boolean, cvcFilled: boolean, nameFilled: boolean }> {
   let cardFilled = false;
@@ -120,53 +71,7 @@ function findNewestPage(context: any, currentPage: any): any {
   return currentPage;
 }
 
-async function handlePatchedFetch(browser: any, originalFetch: Function, request: any, init?: any) {
-  let urlStr = getFetchUrlString(request);
-  const method = getFetchMethod(request, init);
 
-  const stripped = stripFetchQueryParameters(request, urlStr, method);
-  request = stripped.newRequest;
-  urlStr = stripped.newUrlStr;
-
-  console.log(`[MYBROWSER.fetch] request: ${urlStr} [${method}]`);
-  try {
-    const response = await originalFetch.call(browser, request, init);
-    if (urlStr.includes("/v1/devtools/browser/") && method.toUpperCase() !== "DELETE" && !response.webSocket) {
-      const status = response.status;
-      const text = await response.text().catch(() => "");
-      console.error(`[MYBROWSER.fetch] WebSocket upgrade failed. Status: ${status}, Body: ${text}`);
-      throw new Error(`WebSocket upgrade failed: status ${status}, message: ${text}`);
-    }
-    return response;
-  } catch (err) {
-    console.error("[MYBROWSER.fetch] Error during fetch:", err);
-    throw err;
-  }
-}
-
-function patchBrowserFetch() {
-  try {
-    const wEnv = workersEnv as any;
-    console.log("workersEnv status:", !!wEnv, "MYBROWSER:", wEnv ? !!wEnv.MYBROWSER : "no env", "keys:", wEnv ? Object.keys(wEnv) : []);
-    if (wEnv?.MYBROWSER) {
-      const browser = wEnv.MYBROWSER;
-      const originalFetch = browser.fetch;
-      if (originalFetch && !originalFetch.__isPatched) {
-        console.log("Attempting to patch browser.fetch directly...");
-        const patchedFetch = Object.assign(
-          async function(request: any, init?: any) {
-            return handlePatchedFetch(browser, originalFetch, request, init);
-          },
-          { __isPatched: true }
-        );
-        browser.fetch = patchedFetch;
-        console.log("browser.fetch patched directly successfully!");
-      }
-    }
-  } catch (e) {
-    console.error("Error patching workersEnv.MYBROWSER:", e);
-  }
-}
 
 // Intercept playwright's chromium.connectOverCDP to ensure that when it connects to a remote browser,
 // it always creates a browser context if none exists.
@@ -183,6 +88,35 @@ if (chromium?.connectOverCDP) {
   const originalConnectOverCDP = chromium.connectOverCDP;
   const patchedConnectOverCDP = async (...args: any[]) => {
     console.log("Patched connectOverCDP invoked");
+    // Playwright's connectOverCDP accepts (endpointURL: string, options?: ConnectOptions) or (options: ConnectOptions)
+    if (args.length > 0 && typeof args[0] === 'string') {
+      try {
+        const urlObj = new URL(args[0]);
+        if (urlObj.search && urlObj.pathname.includes("/v1/devtools/browser/")) {
+          console.log(`[connectOverCDP] Stripping query parameters from upgrade request: ${urlObj.search}`);
+          urlObj.search = "";
+          args[0] = urlObj.toString();
+        }
+      } catch (e) {
+        console.warn("Ignored invalid endpointURL string in connectOverCDP wrapper:", e);
+      }
+    } else if (args.length > 0 && typeof args[0] === 'object' && args[0] !== null) {
+      const endpointURL = args[0].endpointURL || args[0].wsEndpoint;
+      if (endpointURL && typeof endpointURL === 'string') {
+        try {
+          const urlObj = new URL(endpointURL);
+          if (urlObj.search && urlObj.pathname.includes("/v1/devtools/browser/")) {
+            console.log(`[connectOverCDP] Stripping query parameters from upgrade request: ${urlObj.search}`);
+            urlObj.search = "";
+            if (args[0].endpointURL) args[0].endpointURL = urlObj.toString();
+            if (args[0].wsEndpoint) args[0].wsEndpoint = urlObj.toString();
+          }
+        } catch (e) {
+          console.warn("Ignored invalid endpointURL property in connectOverCDP wrapper:", e);
+        }
+      }
+    }
+
     try {
       const browser = await originalConnectOverCDP.apply(chromium, args as any);
       // Remote/custom CDP connections in Cloudflare Workers do not initialize a default context.
@@ -193,6 +127,11 @@ if (chromium?.connectOverCDP) {
       }
       return browser;
     } catch (err) {
+      if (err instanceof Error && (err.message.includes("accept") || err.message.includes("webSocket"))) {
+        const newErr = new Error(`WebSocket upgrade failed in Playwright connectOverCDP: ${err.message}`);
+        lastCDPError = newErr;
+        throw newErr;
+      }
       lastCDPError = err instanceof Error ? err : new Error(String(err));
       throw err;
     }
@@ -459,8 +398,6 @@ export class StagehandBrowserHelper {
   async init(): Promise<void> {
     console.log("Initializing Stagehand browser helper...");
 
-    // Patch global env.MYBROWSER to intercept and handle WebSocket upgrade failures gracefully
-    patchBrowserFetch();
 
     // 1. Clean up stale sessions
     const cleared = await this.clearStaleSessions();
