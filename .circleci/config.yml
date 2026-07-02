@@ -99,10 +99,10 @@ jobs:
           environment:
             CLOUDFLARE_ENV: << parameters.environment >>
           command: |
-            if [ "$CLOUDFLARE_ENV" = "default" ] || [ -z "$CLOUDFLARE_ENV" ]; then
-              npx wrangler deploy
-            else
+            if [ "$CLOUDFLARE_ENV" = "preview" ]; then
               npx wrangler deploy --env "$CLOUDFLARE_ENV"
+            else
+              npx wrangler deploy
             fi
 workflows:
   build-and-test:
