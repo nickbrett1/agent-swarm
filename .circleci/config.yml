@@ -88,12 +88,8 @@ jobs:
             DOPPLER_CONFIG: << parameters.doppler_config >>
           command: |
             chmod +x scripts/sync-doppler-secrets.sh
-            if [ "$CLOUDFLARE_ENV" = "default" ] || [ -z "$CLOUDFLARE_ENV" ]; then
-              ./scripts/sync-doppler-secrets.sh --config "$DOPPLER_CONFIG" --env "$CLOUDFLARE_ENV"
-            else
-              if ! ./scripts/sync-doppler-secrets.sh --config "$DOPPLER_CONFIG" --env "$CLOUDFLARE_ENV"; then
-                echo "⚠️  Warning: Failed to sync secrets to Cloudflare preview."
-              fi
+            if ! ./scripts/sync-doppler-secrets.sh --config "$DOPPLER_CONFIG" --env "$CLOUDFLARE_ENV"; then
+              echo "⚠️  Warning: Failed to sync secrets to Cloudflare. Using existing secrets."
             fi
       - run:
           name: Build
