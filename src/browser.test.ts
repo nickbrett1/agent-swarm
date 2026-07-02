@@ -290,7 +290,13 @@ describe("StagehandBrowserHelper", () => {
     const success = await helper.handleStripeIframe("4242", "12/28", "123", "John");
     expect(success).toBe(true);
     expect(mockPage.act).toHaveBeenCalledWith({
-      action: 'Fill the credit card checkout form with this testing card information: card number 4242, expiry 12/28, cvc 123, and name John. Submit the form if there is a button.'
+      action: 'Fill the credit card checkout form with this testing card information: card number <card>, expiry <expiry>, cvc <cvc>, and name <name>. Submit the form if there is a button.',
+      variables: {
+        card: "4242",
+        expiry: "12/28",
+        cvc: "123",
+        name: "John"
+      }
     });
   });
 
@@ -325,7 +331,13 @@ describe("StagehandBrowserHelper", () => {
     expect(success).toBe(false);
     expect(mockPage.frames).toHaveBeenCalled();
     expect(mockPage.act).toHaveBeenCalledWith({
-      action: 'Fill the credit card checkout form with this testing card information: card number 4242, expiry 12/28, cvc 123, and name John. Submit the form if there is a button.'
+      action: 'Fill the credit card checkout form with this testing card information: card number <card>, expiry <expiry>, cvc <cvc>, and name <name>. Submit the form if there is a button.',
+      variables: {
+        card: "4242",
+        expiry: "12/28",
+        cvc: "123",
+        name: "John"
+      }
     });
   });
 
@@ -342,7 +354,13 @@ describe("StagehandBrowserHelper", () => {
     expect(success).toBe(true);
     expect(mockPage.frames).toHaveBeenCalled();
     expect(mockPage.act).toHaveBeenCalledWith({
-      action: 'Fill the credit card checkout form with this testing card information: card number 4242, expiry 12/28, cvc 123, and name John. Submit the form if there is a button.'
+      action: 'Fill the credit card checkout form with this testing card information: card number <card>, expiry <expiry>, cvc <cvc>, and name <name>. Submit the form if there is a button.',
+      variables: {
+        card: "4242",
+        expiry: "12/28",
+        cvc: "123",
+        name: "John"
+      }
     });
   });
 
