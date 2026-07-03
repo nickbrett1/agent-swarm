@@ -25,10 +25,10 @@
     "zod-to-json-schema": "^3.25.2"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^4.20260628.1",
+    "@cloudflare/workers-types": "^4.20260619.1",
     "@vitest/coverage-v8": "^4.1.8",
     "typescript": "^6.0.3",
-    "wrangler": "4.105.0"
+    "wrangler": "4.103.0"
   },
   "overrides": {
     "zod": "4.4.3",
