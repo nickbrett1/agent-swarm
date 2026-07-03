@@ -303,7 +303,7 @@ export class ShopperAgent extends Agent<Env, ShopperState> {
     });
   }
 
-  private async executeShoppingLoop(helper: StagehandBrowserHelper, persona: string): Promise<string> {
+  private async executeAgentLoop(helper: StagehandBrowserHelper, persona: string): Promise<string> {
     const maxSteps = 12;
     let step = 0;
     let finished = false;
@@ -399,6 +399,26 @@ export class ShopperAgent extends Agent<Env, ShopperState> {
     }
   }
 
+  private async initializeBrowser(targetUrl: string): Promise<StagehandBrowserHelper> {
+    const helper = new StagehandBrowserHelper(
+      this.env.MYBROWSER,
+      this.env.AI,
+      this.env.GOOGLE_API_KEY || this.env.GEMINI_API_KEY
+    );
+    try {
+      await helper.init();
+      await helper.goto(targetUrl);
+      return helper;
+    } catch (err) {
+      await helper.close();
+      throw err;
+    }
+  }
+
+  private handleSuccess(outcomeSummary: string): string {
+    return `Shopping Session Finished. Status: ${this.state.status}. Summary: ${outcomeSummary}`;
+  }
+
   /**
    * RPC Endpoint to trigger a shopping run.
    */
@@ -406,26 +426,20 @@ export class ShopperAgent extends Agent<Env, ShopperState> {
   @callable()
   async runShopping(persona: string, url?: string): Promise<string> {
     const targetUrl = await this.initializeShoppingSession(persona, url);
-
-    const helper = new StagehandBrowserHelper(
-      this.env.MYBROWSER,
-      this.env.AI,
-      this.env.GOOGLE_API_KEY || this.env.GEMINI_API_KEY
-    );
-
     const browserStartTime = Date.now();
     let resultString = "";
+    let helper: StagehandBrowserHelper | undefined;
 
     try {
-      await helper.init();
-      await helper.goto(targetUrl);
-
-      const outcomeSummary = await this.executeShoppingLoop(helper, persona);
-      resultString = `Shopping Session Finished. Status: ${this.state.status}. Summary: ${outcomeSummary}`;
+      helper = await this.initializeBrowser(targetUrl);
+      const outcomeSummary = await this.executeAgentLoop(helper, persona);
+      resultString = this.handleSuccess(outcomeSummary);
     } catch (err: unknown) {
       resultString = this.handleShoppingError(err);
     } finally {
-      await helper.close();
+      if (helper) {
+        await helper.close();
+      }
       const browserDurationSeconds = ((Date.now() - browserStartTime) / 1000).toFixed(1);
       if (resultString) {
         resultString += ` [Browser Time Used: ${browserDurationSeconds}s]`;
