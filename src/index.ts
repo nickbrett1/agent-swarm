@@ -18,6 +18,8 @@ export interface Env {
   BROWSER_TIME_LIMIT_MOCK?: string | number;
 }
 
+const PAY_SUBMIT_REGEX = /pay|submit|complete|buy|purchase/i;
+
 export interface ShopperState {
   persona: string;
   history: string[];
@@ -170,12 +172,7 @@ export class ShopperAgent extends Agent<Env, ShopperState> {
     const element = pageData.elements.find((e: any) => e.id === decision.targetId);
     let isPayOrSubmit = false;
     if (element && element.text) {
-      const lowerText = element.text.toLowerCase();
-      isPayOrSubmit = lowerText.includes("pay") ||
-        lowerText.includes("submit") ||
-        lowerText.includes("complete") ||
-        lowerText.includes("buy") ||
-        lowerText.includes("purchase");
+      isPayOrSubmit = PAY_SUBMIT_REGEX.test(element.text);
     }
 
     const startUrl = await helper.getPageUrl();
@@ -303,7 +300,7 @@ export class ShopperAgent extends Agent<Env, ShopperState> {
     });
   }
 
-  private async executeAgentLoop(helper: StagehandBrowserHelper, persona: string): Promise<string> {
+  private async executeShoppingLoop(helper: StagehandBrowserHelper, persona: string): Promise<string> {
     const maxSteps = 12;
     let step = 0;
     let finished = false;
@@ -399,26 +396,6 @@ export class ShopperAgent extends Agent<Env, ShopperState> {
     }
   }
 
-  private async initializeBrowser(targetUrl: string): Promise<StagehandBrowserHelper> {
-    const helper = new StagehandBrowserHelper(
-      this.env.MYBROWSER,
-      this.env.AI,
-      this.env.GOOGLE_API_KEY || this.env.GEMINI_API_KEY
-    );
-    try {
-      await helper.init();
-      await helper.goto(targetUrl);
-      return helper;
-    } catch (err) {
-      await helper.close();
-      throw err;
-    }
-  }
-
-  private handleSuccess(outcomeSummary: string): string {
-    return `Shopping Session Finished. Status: ${this.state.status}. Summary: ${outcomeSummary}`;
-  }
-
   /**
    * RPC Endpoint to trigger a shopping run.
    */
@@ -426,20 +403,26 @@ export class ShopperAgent extends Agent<Env, ShopperState> {
   @callable()
   async runShopping(persona: string, url?: string): Promise<string> {
     const targetUrl = await this.initializeShoppingSession(persona, url);
+
+    const helper = new StagehandBrowserHelper(
+      this.env.MYBROWSER,
+      this.env.AI,
+      this.env.GOOGLE_API_KEY || this.env.GEMINI_API_KEY
+    );
+
     const browserStartTime = Date.now();
     let resultString = "";
-    let helper: StagehandBrowserHelper | undefined;
 
     try {
-      helper = await this.initializeBrowser(targetUrl);
-      const outcomeSummary = await this.executeAgentLoop(helper, persona);
-      resultString = this.handleSuccess(outcomeSummary);
+      await helper.init();
+      await helper.goto(targetUrl);
+
+      const outcomeSummary = await this.executeShoppingLoop(helper, persona);
+      resultString = `Shopping Session Finished. Status: ${this.state.status}. Summary: ${outcomeSummary}`;
     } catch (err: unknown) {
       resultString = this.handleShoppingError(err);
     } finally {
-      if (helper) {
-        await helper.close();
-      }
+      await helper.close();
       const browserDurationSeconds = ((Date.now() - browserStartTime) / 1000).toFixed(1);
       if (resultString) {
         resultString += ` [Browser Time Used: ${browserDurationSeconds}s]`;
@@ -759,109 +742,124 @@ async function buildLimitsResponse(env: Env) {
   };
 }
 
+function handleOptions(request: Request): Response {
+  return new Response(null, {
+    status: 204,
+    headers: {
+      "Access-Control-Allow-Origin": getCorsOrigin(request),
+      "Access-Control-Allow-Methods": "GET, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type"
+    }
+  });
+}
+
+async function handleLimits(request: Request, env: Env): Promise<Response> {
+  const limitsResponse = await buildLimitsResponse(env);
+
+  return new Response(JSON.stringify(limitsResponse, null, 2), {
+    status: 200,
+    headers: {
+      "Content-Type": "application/json",
+      "Access-Control-Allow-Origin": getCorsOrigin(request),
+      "Access-Control-Allow-Methods": "GET, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type"
+    }
+  });
+}
+
+function handleInfo(request: Request): Response {
+  const info = {
+    name: "agent-swarm",
+    description: "Autonomous browser rendering swarm that runs stateful agent sessions.",
+    version: "0.1.0",
+    agents: {
+      ShopperAgent: {
+        description: "Launches a browser rendering session to browse, search, and purchase products in Stripe test-mode.",
+        methods: {
+          runShopping: {
+            description: "Triggers a browser automation sequence with the specified shopping persona.",
+            parameters: {
+              type: "object",
+              properties: {
+                persona: {
+                  type: "string",
+                  description: "The buyer behavior profile (e.g., 'A tech buyer looking for a sticker').",
+                  required: true
+                },
+                url: {
+                  type: "string",
+                  description: "Override URL to shop on. Defaults to the configured SHOP_URL.",
+                  required: false
+                }
+              }
+            },
+            returns: {
+              type: "string",
+              description: "A summary string of the shopping session outcome."
+            }
+          }
+        }
+      }
+    }
+  };
+
+  return new Response(JSON.stringify(info, null, 2), {
+    status: 200,
+    headers: {
+      "Content-Type": "application/json",
+      "Access-Control-Allow-Origin": getCorsOrigin(request),
+      "Access-Control-Allow-Methods": "GET, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type"
+    }
+  });
+}
+
+async function handleAgentRequest(request: Request, env: Env, url: URL): Promise<Response> {
+  const expiry = url.searchParams.get("expiry");
+  const signature = url.searchParams.get("signature");
+
+  const secret = env.AGENT_SWARM_SECRET;
+
+  if (secret) {
+    const isAuthorized = await verifyHmacSignature(expiry, signature, secret);
+
+    if (!isAuthorized) {
+      return new Response("Unauthorized Swarm Connection: Invalid or expired signature", {
+        status: 401,
+        headers: { "Content-Type": "text/plain" }
+      });
+    }
+  }
+
+  return (
+    (await routeAgentRequest(request, env)) ??
+    new Response("Cloudflare Agent Swarm is running. Use the WebSocket/RPC client to trigger runs.", {
+      status: 200,
+      headers: { "Content-Type": "text/plain" }
+    })
+  );
+}
+
 export default {
   async fetch(request: Request, env: Env) {
     const url = new URL(request.url);
 
     // 1. Handle CORS preflight requests
     if (request.method === "OPTIONS") {
-      return new Response(null, {
-        status: 204,
-        headers: {
-          "Access-Control-Allow-Origin": getCorsOrigin(request),
-          "Access-Control-Allow-Methods": "GET, OPTIONS",
-          "Access-Control-Allow-Headers": "Content-Type"
-        }
-      });
+      return handleOptions(request);
     }
 
     // 2. Serve public API limits/usage data without requiring signatures
     if (url.pathname === "/limits" || url.pathname === "/usage") {
-      const limitsResponse = await buildLimitsResponse(env);
-
-      return new Response(JSON.stringify(limitsResponse, null, 2), {
-        status: 200,
-        headers: {
-          "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": getCorsOrigin(request),
-          "Access-Control-Allow-Methods": "GET, OPTIONS",
-          "Access-Control-Allow-Headers": "Content-Type"
-        }
-      });
+      return handleLimits(request, env);
     }
 
     // 3. Serve public API metadata without requiring signatures
     if (url.pathname === "/info" || url.pathname === "/inspect") {
-      const info = {
-        name: "agent-swarm",
-        description: "Autonomous browser rendering swarm that runs stateful agent sessions.",
-        version: "0.1.0",
-        agents: {
-          ShopperAgent: {
-            description: "Launches a browser rendering session to browse, search, and purchase products in Stripe test-mode.",
-            methods: {
-              runShopping: {
-                description: "Triggers a browser automation sequence with the specified shopping persona.",
-                parameters: {
-                  type: "object",
-                  properties: {
-                    persona: {
-                      type: "string",
-                      description: "The buyer behavior profile (e.g., 'A tech buyer looking for a sticker').",
-                      required: true
-                    },
-                    url: {
-                      type: "string",
-                      description: "Override URL to shop on. Defaults to the configured SHOP_URL.",
-                      required: false
-                    }
-                  }
-                },
-                returns: {
-                  type: "string",
-                  description: "A summary string of the shopping session outcome."
-                }
-              }
-            }
-          }
-        }
-      };
-
-      return new Response(JSON.stringify(info, null, 2), {
-        status: 200,
-        headers: {
-          "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": getCorsOrigin(request),
-          "Access-Control-Allow-Methods": "GET, OPTIONS",
-          "Access-Control-Allow-Headers": "Content-Type"
-        }
-      });
+      return handleInfo(request);
     }
 
-    // 4. Verify access signature if secret is configured
-    const expiry = url.searchParams.get("expiry");
-    const signature = url.searchParams.get("signature");
-
-    const secret = env.AGENT_SWARM_SECRET;
-
-    if (secret) {
-      const isAuthorized = await verifyHmacSignature(expiry, signature, secret);
-
-      if (!isAuthorized) {
-        return new Response("Unauthorized Swarm Connection: Invalid or expired signature", {
-          status: 401,
-          headers: { "Content-Type": "text/plain" }
-        });
-      }
-    }
-
-    // 4. If valid, route the websocket/RPC request to the Durable Object
-    return (
-      (await routeAgentRequest(request, env)) ??
-      new Response("Cloudflare Agent Swarm is running. Use the WebSocket/RPC client to trigger runs.", {
-        status: 200,
-        headers: { "Content-Type": "text/plain" }
-      })
-    );
+    // 4. Verify access signature if secret is configured and route request
+    return handleAgentRequest(request, env, url);
   }
 };

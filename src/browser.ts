@@ -2,10 +2,12 @@ import { Stagehand } from "@browserbasehq/stagehand";
 import * as playwrightModule from "@cloudflare/playwright";
 import type { BrowserType } from "@cloudflare/playwright";
 import puppeteer from "@cloudflare/puppeteer";
-import { env as workersEnv } from "cloudflare:workers";
 import { AgentLLMClient } from "./agentLLMClient.js";
 
 const endpointURLString = playwrightModule.endpointURLString;
+
+const TRACKER_REGEX = /google-analytics\.com|googletagmanager\.com|doubleclick\.net|facebook\.net|hotjar\.com|mixpanel\.com|segment\.io/;
+
 
 async function fillStripeLocators(frames: any[], card: string, expiry: string, cvc: string, name: string): Promise<{ cardFilled: boolean, expiryFilled: boolean, cvcFilled: boolean, nameFilled: boolean }> {
   let cardFilled = false;
@@ -18,7 +20,7 @@ async function fillStripeLocators(frames: any[], card: string, expiry: string, c
   const cvcSelector = STRIPE_CVC_SELECTORS.join(',');
   const nameSelector = STRIPE_NAME_SELECTORS.join(',');
 
-  for (const frame of frames) {
+  await Promise.all(frames.map(async (frame) => {
     try {
       const cardLoc = frame.locator(cardSelector);
       if (await cardLoc.count() > 0) {
@@ -46,7 +48,7 @@ async function fillStripeLocators(frames: any[], card: string, expiry: string, c
     } catch (frameErr) {
       console.warn("Ignored frame specific error while filling Stripe:", frameErr);
     }
-  }
+  }));
 
   return { cardFilled, expiryFilled, cvcFilled, nameFilled };
 }
@@ -68,6 +70,9 @@ function findNewestPage(context: any, currentPage: any): any {
 
   return currentPage;
 }
+
+
+
 
 // Intercept playwright's chromium.connectOverCDP to ensure that when it connects to a remote browser,
 // it always creates a browser context if none exists.
@@ -360,14 +365,7 @@ export class StagehandBrowserHelper {
         const resourceType = request.resourceType();
         const url = request.url();
 
-        const isTracker =
-          url.includes("google-analytics.com") ||
-          url.includes("googletagmanager.com") ||
-          url.includes("doubleclick.net") ||
-          url.includes("facebook.net") ||
-          url.includes("hotjar.com") ||
-          url.includes("mixpanel.com") ||
-          url.includes("segment.io");
+        const isTracker = TRACKER_REGEX.test(url);
 
         const isHeavyAsset =
           resourceType === "media" ||
@@ -400,6 +398,7 @@ export class StagehandBrowserHelper {
 
   async init(): Promise<void> {
     console.log("Initializing Stagehand browser helper...");
+
 
     // 1. Clean up stale sessions
     const cleared = await this.clearStaleSessions();
@@ -730,7 +729,13 @@ export class StagehandBrowserHelper {
     console.log("Fallback to Stagehand act for Stripe...");
     try {
       await page.act({
-        action: `Fill the credit card checkout form with this testing card information: card number ${card}, expiry ${expiry}, cvc ${cvc}, and name ${name}. Submit the form if there is a button.`
+        action: `Fill the credit card checkout form with this testing card information: card number <card>, expiry <expiry>, cvc <cvc>, and name <name>. Submit the form if there is a button.`,
+        variables: {
+          card,
+          expiry,
+          cvc,
+          name
+        }
       });
       return true;
     } catch (err) {
