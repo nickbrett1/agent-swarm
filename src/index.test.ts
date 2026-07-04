@@ -592,3 +592,31 @@ describe('ShopperAgent isSafeUrl validation', () => {
     expect(await agent.isSafeUrl(url)).toBe(expected);
   });
 });
+
+describe('ShopperAgent error handling methods execution', () => {
+  let agent: any;
+
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    const env = {
+      MYBROWSER: { fetch: vi.fn() },
+      AI: {}
+    };
+    agent = new (ShopperAgent as any)(null, env);
+  });
+
+  it('should process handleShoppingError properly when it is a connection closed error with pay clicked', () => {
+    agent.state.history = ['Step 1: Buy item -> Action: click on buy_button_14'];
+    const error = new Error("Connection closed");
+    const result = agent.handleShoppingError(error);
+    expect(result).toContain("completed");
+    expect(agent.state.status).toBe("completed");
+  });
+
+  it('should throw an error for handleShoppingError on non-closed browser errors', () => {
+    agent.state.history = ['Step 1: Test'];
+    const error = new Error("Generic failure");
+    expect(() => agent.handleShoppingError(error)).toThrow('Generic failure');
+    expect(agent.state.status).toBe("failed");
+  });
+});
