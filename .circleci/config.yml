@@ -11,9 +11,6 @@ jobs:
       SONAR_SCANNER_OPTS: "-Dproject.settings=.sonarcloud.properties"
     steps:
       - checkout
-      - run:
-          name: Export SonarCloud Token
-          command: echo "export SONAR_TOKEN=\$SONARQUBE_TOKEN" >> $BASH_ENV
       - restore_cache:
           keys:
             - v1-deps-{{ checksum "package.json" }}
@@ -107,7 +104,9 @@ workflows:
   build-and-test:
     jobs:
       - build:
-          context: common
+          context:
+            - common
+            - SonarCloud
 
 
       - deploy-to-cloudflare:
