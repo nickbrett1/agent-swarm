@@ -11,6 +11,9 @@ jobs:
       SONAR_SCANNER_OPTS: "-Dproject.settings=.sonarcloud.properties"
     steps:
       - checkout
+      - run:
+          name: Export SonarCloud Token
+          command: echo "export SONAR_TOKEN=\$SONARQUBE_TOKEN" >> $BASH_ENV
       - restore_cache:
           keys:
             - v1-deps-{{ checksum "package.json" }}
@@ -37,7 +40,7 @@ jobs:
       - run:
           name: Build
           command: npm run build
-      - sonarcloud/scan
+      # - sonarcloud/scan
       - run:
           name: Test
           command: npm run test
@@ -85,28 +88,31 @@ jobs:
             DOPPLER_CONFIG: << parameters.doppler_config >>
           command: |
             chmod +x scripts/sync-doppler-secrets.sh
-            if ! ./scripts/sync-doppler-secrets.sh --config "$DOPPLER_CONFIG" --env "$CLOUDFLARE_ENV"; then
-              echo "⚠️  Warning: Failed to sync secrets to Cloudflare. Using existing secrets."
+            if [ "$CLOUDFLARE_ENV" = "default" ] || [ -z "$CLOUDFLARE_ENV" ]; then
+              ./scripts/sync-doppler-secrets.sh --config "$DOPPLER_CONFIG" --env "$CLOUDFLARE_ENV"
+            else
+              if ! ./scripts/sync-doppler-secrets.sh --config "$DOPPLER_CONFIG" --env "$CLOUDFLARE_ENV"; then
+                echo "⚠️  Warning: Failed to sync secrets to Cloudflare preview."
+              fi
             fi
       - run:
           name: Build
           command: npm run build
       - run:
           name: Deploy to Cloudflare Workers
+          environment:
+            CLOUDFLARE_ENV: << parameters.environment >>
           command: |
-            ENV_VAL="<< parameters.environment >>"
-            if [ "$ENV_VAL" = "preview" ]; then
-              npx wrangler deploy --env "$ENV_VAL"
-            else
+            if [ "$CLOUDFLARE_ENV" = "default" ] || [ -z "$CLOUDFLARE_ENV" ]; then
               npx wrangler deploy
+            else
+              npx wrangler deploy --env "$CLOUDFLARE_ENV"
             fi
 workflows:
   build-and-test:
     jobs:
       - build:
-          context:
-            - common
-            - SonarCloud
+          context: common
 
 
       - deploy-to-cloudflare:

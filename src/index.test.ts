@@ -71,6 +71,7 @@ describe('ShopperAgent isSafeUrl Logic', () => {
     mockFetch = vi.fn();
     globalThis.fetch = mockFetch;
 
+    // Default fetch behavior for DNS DoH requests (no answers)
     mockFetch.mockResolvedValue({
       ok: true,
       json: async () => ({ Answer: [] })
