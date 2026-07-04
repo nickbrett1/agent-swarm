@@ -11,6 +11,9 @@ jobs:
       SONAR_SCANNER_OPTS: "-Dproject.settings=.sonarcloud.properties"
     steps:
       - checkout
+      - run:
+          name: Export SonarCloud Token
+          command: echo "export SONAR_TOKEN=\$SONARQUBE_TOKEN" >> $BASH_ENV
       - restore_cache:
           keys:
             - v1-deps-{{ checksum "package.json" }}
@@ -85,25 +88,20 @@ jobs:
             DOPPLER_CONFIG: << parameters.doppler_config >>
           command: |
             chmod +x scripts/sync-doppler-secrets.sh
-            if [ "$CLOUDFLARE_ENV" = "default" ] || [ -z "$CLOUDFLARE_ENV" ]; then
-              ./scripts/sync-doppler-secrets.sh --config "$DOPPLER_CONFIG" --env "$CLOUDFLARE_ENV"
-            else
-              if ! ./scripts/sync-doppler-secrets.sh --config "$DOPPLER_CONFIG" --env "$CLOUDFLARE_ENV"; then
-                echo "⚠️  Warning: Failed to sync secrets to Cloudflare preview."
-              fi
+            if ! ./scripts/sync-doppler-secrets.sh --config "$DOPPLER_CONFIG" --env "$CLOUDFLARE_ENV"; then
+              echo "⚠️  Warning: Failed to sync secrets to Cloudflare. Using existing secrets."
             fi
       - run:
           name: Build
           command: npm run build
       - run:
           name: Deploy to Cloudflare Workers
-          environment:
-            CLOUDFLARE_ENV: << parameters.environment >>
           command: |
-            if [ "$CLOUDFLARE_ENV" = "default" ] || [ -z "$CLOUDFLARE_ENV" ]; then
-              npx wrangler deploy
+            ENV_VAL="<< parameters.environment >>"
+            if [ "$ENV_VAL" = "preview" ]; then
+              npx wrangler deploy --env "$ENV_VAL"
             else
-              npx wrangler deploy --env "$CLOUDFLARE_ENV"
+              npx wrangler deploy
             fi
 workflows:
   build-and-test:
