@@ -592,3 +592,77 @@ describe('ShopperAgent isSafeUrl validation', () => {
     expect(await agent.isSafeUrl(url)).toBe(expected);
   });
 });
+
+
+describe("ShopperAgent - Full execution flow", () => {
+    let agent: any;
+    let helper: any;
+
+    beforeEach(async () => {
+        const { ShopperAgent } = await import("./index.js");
+        agent = new ShopperAgent({} as any, {} as any);
+        agent.env = { STRIPE_TEST_CARD: "123", STRIPE_TEST_EXPIRY: "12/34", STRIPE_TEST_CVC: "123", STRIPE_TEST_NAME: "Bob" } as any;
+        (agent as any).state = { history: [], status: "running" };
+
+        helper = {
+            getPageUrl: vi.fn().mockResolvedValue("https://example.com"),
+            getInteractiveElements: vi.fn().mockResolvedValue({ textSummary: "sum", elements: [{ id: "button_0", tag: "button", text: "Click me", type: "", placeholder: "", name: "", role: "", xpath: "//button" }, { id: "input_0", tag: "input", text: "text", type: "text", placeholder: "text", name: "", role: "", xpath: "//input" }] }),
+            clickElement: vi.fn().mockResolvedValue(true),
+            typeElement: vi.fn().mockResolvedValue(true),
+            wait: vi.fn(),
+            handleStripeIframe: vi.fn().mockResolvedValue(true)
+        };
+    });
+
+    it("should process finish action correctly", async () => {
+        (agent as any).buildLLMPrompt = vi.fn().mockReturnValue({ systemPrompt: "sys", userPrompt: "user" });
+        (agent as any).queryLLM = vi.fn().mockResolvedValue({ action: "finish", explanation: "done" });
+        await (agent as any).executeShoppingLoop(helper, "buyer");
+        expect((agent as any).state.status).toBe("completed");
+    });
+
+    it("should process error action correctly", async () => {
+        (agent as any).buildLLMPrompt = vi.fn().mockReturnValue({ systemPrompt: "sys", userPrompt: "user" });
+        (agent as any).queryLLM = vi.fn().mockResolvedValue({ action: "error", explanation: "failed" });
+        await expect((agent as any).executeShoppingLoop(helper, "buyer")).rejects.toThrow("Unsupported action: error");
+    });
+
+    it("should process click action correctly", async () => {
+        (agent as any).buildLLMPrompt = vi.fn().mockReturnValue({ systemPrompt: "sys", userPrompt: "user" });
+        (agent as any).queryLLM = vi.fn().mockResolvedValueOnce({ action: "click", explanation: "click it", targetId: "button_0" })
+            .mockResolvedValueOnce({ action: "finish", explanation: "done" });
+        await (agent as any).executeShoppingLoop(helper, "buyer");
+        expect(helper.clickElement).toHaveBeenCalledWith("button_0");
+    });
+
+    it("should process type action correctly", async () => {
+        (agent as any).buildLLMPrompt = vi.fn().mockReturnValue({ systemPrompt: "sys", userPrompt: "user" });
+        (agent as any).queryLLM = vi.fn().mockResolvedValueOnce({ action: "type", explanation: "type it", targetId: "input_0", text: "hello" })
+            .mockResolvedValueOnce({ action: "finish", explanation: "done" });
+        await (agent as any).executeShoppingLoop(helper, "buyer");
+        expect(helper.typeElement).toHaveBeenCalledWith("input_0", "hello");
+    });
+
+    it("should process stripe_fill action correctly", async () => {
+        (agent as any).buildLLMPrompt = vi.fn().mockReturnValue({ systemPrompt: "sys", userPrompt: "user" });
+        (agent as any).queryLLM = vi.fn().mockResolvedValueOnce({ action: "stripe_fill", explanation: "stripe" })
+            .mockResolvedValueOnce({ action: "finish", explanation: "done" });
+        await (agent as any).executeShoppingLoop(helper, "buyer");
+        expect(helper.handleStripeIframe).toHaveBeenCalledWith("123", "12/34", "123", "Bob");
+    });
+
+    it("should fail gracefully on invalid action", async () => {
+        (agent as any).buildLLMPrompt = vi.fn().mockReturnValue({ systemPrompt: "sys", userPrompt: "user" });
+        (agent as any).queryLLM = vi.fn().mockResolvedValueOnce({ action: "unknown", explanation: "unknown" });
+        await expect((agent as any).executeShoppingLoop(helper, "buyer")).rejects.toThrow("Unsupported action: unknown");
+    });
+
+    it("should cap max loop iterations", async () => {
+        (agent as any).buildLLMPrompt = vi.fn().mockReturnValue({ systemPrompt: "sys", userPrompt: "user" });
+        (agent as any).queryLLM = vi.fn().mockResolvedValue({ action: "click", explanation: "click it", targetId: "button_0" });
+        try {
+            await (agent as any).executeShoppingLoop(helper, "buyer");
+        } catch {}
+        expect((agent as any).state.status).toBe("failed");
+    });
+});

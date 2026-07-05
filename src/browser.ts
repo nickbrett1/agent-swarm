@@ -404,7 +404,7 @@ export class StagehandBrowserHelper {
     const cleared = await this.clearStaleSessions();
     if (cleared > 0) {
       console.log("Waiting 10 seconds for sessions to close on Cloudflare...");
-      await new Promise((resolve) => setTimeout(resolve, 10000));
+      await this.wait(10000);
     }
 
     // 2. Check for limits and build connection string
@@ -746,5 +746,13 @@ export class StagehandBrowserHelper {
 
   async wait(ms: number): Promise<void> {
     await new Promise((resolve) => setTimeout(resolve, ms));
+  }
+}
+
+export const _test_getPatchedConnectOverCDP = () => playwrightModule.chromium?.connectOverCDP;
+
+export function _test_setOriginalConnectOverCDP(fn: any) {
+  if (chromium && chromium.connectOverCDP) {
+    (chromium as any)._test_setOriginalConnectOverCDP?.(fn);
   }
 }
