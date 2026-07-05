@@ -26,6 +26,7 @@ vi.mock("@cloudflare/puppeteer", () => ({
 }));
 
 vi.mock("@cloudflare/playwright", () => ({
+  chromium: { connectOverCDP: vi.fn() },
   endpointURLString: vi.fn().mockReturnValue("wss://dummy-cdp-url"),
 }));
 
@@ -392,4 +393,246 @@ describe("StagehandBrowserHelper", () => {
     await expect(waitPromise).resolves.toBeUndefined();
     vi.useRealTimers();
   });
+});
+
+describe("StagehandBrowserHelper uncovered methods", () => {
+    let mockPage: any;
+    let mockContext: any;
+    let mockStagehand: any;
+
+    beforeEach(async () => {
+        const puppeteer = await import("@cloudflare/puppeteer");
+        puppeteer.default.sessions = vi.fn().mockResolvedValue([{ sessionId: "mock-session-id" }]);
+
+        mockPage = {
+            route: vi.fn(),
+            evaluate: vi.fn(),
+            url: vi.fn().mockReturnValue("https://example.com")
+        };
+        mockContext = {
+            activePage: vi.fn().mockReturnValue(mockPage),
+            pages: vi.fn().mockReturnValue([mockPage])
+        };
+
+        mockStagehand = {
+            init: vi.fn().mockResolvedValue(undefined),
+            context: mockContext,
+            close: vi.fn().mockResolvedValue(undefined),
+            page: mockPage,
+        };
+    });
+
+    it("should handle tryGetExistingSessionUrl correctly", async () => {
+        vi.spyOn((await import("./browser.js")).StagehandBrowserHelper.prototype as any, 'wait').mockResolvedValue(undefined);
+        const helper = new (await import("./browser.js")).StagehandBrowserHelper({
+            fetch: vi.fn().mockResolvedValue({ text: () => Promise.resolve("ok"), status: 200 })
+        });
+        (helper as any).createStagehand = vi.fn().mockReturnValue(mockStagehand);
+        await helper.init();
+        expect(mockStagehand.init).toHaveBeenCalled();
+    });
+
+    it("should setup blocker to abort trackers", async () => {
+        vi.spyOn((await import("./browser.js")).StagehandBrowserHelper.prototype as any, 'wait').mockResolvedValue(undefined);
+        const helper = new (await import("./browser.js")).StagehandBrowserHelper({ fetch: vi.fn().mockResolvedValue({ text: () => Promise.resolve("ok"), status: 200 }) });
+        (helper as any).createStagehand = vi.fn().mockReturnValue(mockStagehand);
+        await helper.init();
+
+        expect(mockPage.route).toHaveBeenCalledWith("**/*", expect.any(Function));
+
+        const routeCallback = mockPage.route.mock.calls[0][1];
+
+        const mockAbort = vi.fn();
+        const mockContinue = vi.fn();
+
+        const mockTrackerRoute = {
+            request: () => ({ resourceType: () => "script", url: () => "https://google-analytics.com/analytics.js" }),
+            abort: mockAbort,
+            continue: mockContinue
+        };
+        routeCallback(mockTrackerRoute);
+        expect(mockAbort).toHaveBeenCalled();
+
+        const mockMediaRoute = {
+            request: () => ({ resourceType: () => "media", url: () => "https://example.com/video.mp4" }),
+            abort: mockAbort,
+            continue: mockContinue
+        };
+        routeCallback(mockMediaRoute);
+        expect(mockAbort).toHaveBeenCalledTimes(2);
+
+        const mockValidRoute = {
+            request: () => ({ resourceType: () => "document", url: () => "https://example.com/page.html" }),
+            abort: mockAbort,
+            continue: mockContinue
+        };
+        routeCallback(mockValidRoute);
+        expect(mockContinue).toHaveBeenCalled();
+    });
+
+    it("should retry with fresh session on existing session connection error", async () => {
+        vi.spyOn((await import("./browser.js")).StagehandBrowserHelper.prototype as any, 'wait').mockResolvedValue(undefined);
+        const helper = new (await import("./browser.js")).StagehandBrowserHelper({ fetch: vi.fn().mockResolvedValue({ text: () => Promise.resolve("ok"), status: 200 }) });
+        (helper as any).createStagehand = vi.fn().mockReturnValue(mockStagehand);
+
+        // Fails first attempt, succeeds second
+        mockStagehand.init
+            .mockRejectedValueOnce(new Error("Connection error"))
+            .mockResolvedValueOnce(undefined);
+
+        await expect(helper.init()).resolves.toBeUndefined();
+        expect(mockStagehand.init).toHaveBeenCalledTimes(2);
+    });
+
+    it("should handle error in close()", async () => {
+        vi.spyOn((await import("./browser.js")).StagehandBrowserHelper.prototype as any, 'wait').mockResolvedValue(undefined);
+        const helper = new (await import("./browser.js")).StagehandBrowserHelper({ fetch: vi.fn().mockResolvedValue({ text: () => Promise.resolve("ok"), status: 200 }) });
+        (helper as any).createStagehand = vi.fn().mockReturnValue(mockStagehand);
+        await helper.init();
+        mockStagehand.close.mockRejectedValueOnce(new Error("Close error"));
+        const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+        await expect(helper.close()).resolves.toBeUndefined();
+        expect(warnSpy).toHaveBeenCalledWith("Error closing Stagehand:", "Close error");
+        warnSpy.mockRestore();
+    });
+
+    it("should process limits information correctly in handleInitError", async () => {
+        vi.spyOn((await import("./browser.js")).StagehandBrowserHelper.prototype as any, 'wait').mockResolvedValue(undefined);
+        const puppeteer = await import("@cloudflare/puppeteer");
+        puppeteer.default.limits = vi.fn().mockResolvedValue({
+            activeSessions: [{ id: "mock-session-id" }],
+            maxConcurrentSessions: 4,
+            allowedBrowserAcquisitions: 1,
+            timeUntilNextAllowedBrowserAcquisition: 0
+        });
+
+        const helper = new (await import("./browser.js")).StagehandBrowserHelper({ fetch: vi.fn().mockResolvedValue({ text: () => Promise.resolve("ok"), status: 200 }) });
+        (helper as any).createStagehand = vi.fn().mockReturnValue(mockStagehand);
+
+        mockStagehand.init.mockRejectedValue(new Error("Unable to create new browser"));
+
+        await expect(helper.init()).rejects.toThrow("Unable to create new browser - Cloudflare Limits: Active Sessions=1/4, Acquisitions Allowed=1, Time Until Next Acquisition=0ms");
+    });
+});
+
+describe("StagehandBrowserHelper uncovered methods", () => {
+    let mockPage: any;
+    let mockContext: any;
+    let mockStagehand: any;
+
+    beforeEach(async () => {
+        const puppeteer = await import("@cloudflare/puppeteer");
+        puppeteer.default.sessions = vi.fn().mockResolvedValue([{ sessionId: "mock-session-id" }]);
+
+        mockPage = {
+            route: vi.fn(),
+            evaluate: vi.fn(),
+            url: vi.fn().mockReturnValue("https://example.com")
+        };
+        mockContext = {
+            activePage: vi.fn().mockReturnValue(mockPage),
+            pages: vi.fn().mockReturnValue([mockPage])
+        };
+
+        mockStagehand = {
+            init: vi.fn().mockResolvedValue(undefined),
+            context: mockContext,
+            close: vi.fn().mockResolvedValue(undefined),
+            page: mockPage,
+        };
+    });
+
+    it("should handle tryGetExistingSessionUrl correctly", async () => {
+        const helper = new (await import("./browser.js")).StagehandBrowserHelper({
+            fetch: vi.fn().mockResolvedValue({ text: () => Promise.resolve("ok"), status: 200 })
+        });
+        (helper as any).createStagehand = vi.fn().mockReturnValue(mockStagehand);
+        vi.spyOn(helper as any, 'wait').mockResolvedValue(undefined);
+        await helper.init();
+        expect(mockStagehand.init).toHaveBeenCalled();
+    });
+
+    it("should setup blocker to abort trackers", async () => {
+        const helper = new (await import("./browser.js")).StagehandBrowserHelper({ fetch: vi.fn().mockResolvedValue({ text: () => Promise.resolve("ok"), status: 200 }) });
+        (helper as any).createStagehand = vi.fn().mockReturnValue(mockStagehand);
+        vi.spyOn(helper as any, 'wait').mockResolvedValue(undefined);
+        await helper.init();
+
+        expect(mockPage.route).toHaveBeenCalledWith("**/*", expect.any(Function));
+
+        const routeCallback = mockPage.route.mock.calls[0][1];
+
+        const mockAbort = vi.fn();
+        const mockContinue = vi.fn();
+
+        const mockTrackerRoute = {
+            request: () => ({ resourceType: () => "script", url: () => "https://google-analytics.com/analytics.js" }),
+            abort: mockAbort,
+            continue: mockContinue
+        };
+        routeCallback(mockTrackerRoute);
+        expect(mockAbort).toHaveBeenCalled();
+
+        const mockMediaRoute = {
+            request: () => ({ resourceType: () => "media", url: () => "https://example.com/video.mp4" }),
+            abort: mockAbort,
+            continue: mockContinue
+        };
+        routeCallback(mockMediaRoute);
+        expect(mockAbort).toHaveBeenCalledTimes(2);
+
+        const mockValidRoute = {
+            request: () => ({ resourceType: () => "document", url: () => "https://example.com/page.html" }),
+            abort: mockAbort,
+            continue: mockContinue
+        };
+        routeCallback(mockValidRoute);
+        expect(mockContinue).toHaveBeenCalled();
+    });
+
+    it("should retry with fresh session on existing session connection error", async () => {
+        const helper = new (await import("./browser.js")).StagehandBrowserHelper({ fetch: vi.fn().mockResolvedValue({ text: () => Promise.resolve("ok"), status: 200 }) });
+        (helper as any).createStagehand = vi.fn().mockReturnValue(mockStagehand);
+        vi.spyOn(helper as any, 'wait').mockResolvedValue(undefined);
+
+        // Fails first attempt, succeeds second
+        mockStagehand.init
+            .mockRejectedValueOnce(new Error("Connection error"))
+            .mockResolvedValueOnce(undefined);
+
+        await expect(helper.init()).resolves.toBeUndefined();
+        expect(mockStagehand.init).toHaveBeenCalledTimes(2);
+    });
+
+    it("should handle error in close()", async () => {
+        const helper = new (await import("./browser.js")).StagehandBrowserHelper({ fetch: vi.fn().mockResolvedValue({ text: () => Promise.resolve("ok"), status: 200 }) });
+        (helper as any).createStagehand = vi.fn().mockReturnValue(mockStagehand);
+        vi.spyOn(helper as any, 'wait').mockResolvedValue(undefined);
+        await helper.init();
+        mockStagehand.close.mockRejectedValueOnce(new Error("Close error"));
+        const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+        await expect(helper.close()).resolves.toBeUndefined();
+        expect(warnSpy).toHaveBeenCalledWith("Error closing Stagehand:", "Close error");
+        warnSpy.mockRestore();
+    });
+
+    it("should process limits information correctly in handleInitError", async () => {
+        const puppeteer = await import("@cloudflare/puppeteer");
+        puppeteer.default.limits = vi.fn().mockResolvedValue({
+            activeSessions: [{ id: "mock-session-id" }],
+            maxConcurrentSessions: 4,
+            allowedBrowserAcquisitions: 1,
+            timeUntilNextAllowedBrowserAcquisition: 0
+        });
+
+        const helper = new (await import("./browser.js")).StagehandBrowserHelper({ fetch: vi.fn().mockResolvedValue({ text: () => Promise.resolve("ok"), status: 200 }) });
+        (helper as any).createStagehand = vi.fn().mockReturnValue(mockStagehand);
+        vi.spyOn(helper as any, 'wait').mockResolvedValue(undefined);
+
+        mockStagehand.init.mockRejectedValue(new Error("Unable to create new browser"));
+
+        await expect(helper.init()).rejects.toThrow("Unable to create new browser - Cloudflare Limits: Active Sessions=1/4, Acquisitions Allowed=1, Time Until Next Acquisition=0ms");
+    });
 });

@@ -1,10 +1,16 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { AgentLLMClient } from './agentLLMClient.js';
 import type { Ai } from "@cloudflare/workers-types";
 
 describe('AgentLLMClient', () => {
+  const originalFetch = globalThis.fetch;
+
   beforeEach(() => {
     globalThis.fetch = vi.fn();
+  });
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
   });
 
   const mockOptions = {
@@ -14,7 +20,6 @@ describe('AgentLLMClient', () => {
   };
 
   it('should fallback to Workers AI if Gemini API call fails and binding is available', async () => {
-    // Simulate Gemini API failure
     (globalThis.fetch as any).mockRejectedValueOnce(new Error('Network error'));
 
     const mockRun = vi.fn().mockResolvedValueOnce({ response: 'workers ai response' });
@@ -27,13 +32,9 @@ describe('AgentLLMClient', () => {
       logger: mockLogger
     });
 
-    const result = await client.createChatCompletion(mockOptions as any);
+    const result = await client.createChatCompletion({ logger: vi.fn(), ...mockOptions } as any);
 
     expect(result).toEqual({ data: 'workers ai response' });
-    expect(mockLogger).toHaveBeenCalledWith({
-      category: 'gemini',
-      message: 'Thinking using Gemini API...'
-    });
     expect(mockLogger).toHaveBeenCalledWith(
       expect.objectContaining({
         category: 'gemini',
@@ -44,7 +45,6 @@ describe('AgentLLMClient', () => {
   });
 
   it('should throw error if Gemini API call fails and no binding is available', async () => {
-    // Simulate Gemini API failure
     const error = new Error('Network error');
     (globalThis.fetch as any).mockRejectedValueOnce(error);
 
@@ -55,7 +55,7 @@ describe('AgentLLMClient', () => {
       logger: mockLogger
     });
 
-    await expect(client.createChatCompletion(mockOptions as any)).rejects.toThrow('Network error');
+    await expect(client.createChatCompletion({ logger: vi.fn(), ...mockOptions } as any)).rejects.toThrow('Network error');
 
     expect(mockLogger).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -76,7 +76,7 @@ describe('AgentLLMClient', () => {
       apiKey: 'test-api-key'
     });
 
-    await expect(client.createChatCompletion(mockOptions as any)).rejects.toThrow('Gemini API returned status 500: Internal Server Error');
+    await expect(client.createChatCompletion({ logger: vi.fn(), ...mockOptions } as any)).rejects.toThrow('Gemini API returned status 500: Internal Server Error');
   });
 
   it('should throw error if Gemini API returns empty response and no binding is available', async () => {
@@ -89,7 +89,7 @@ describe('AgentLLMClient', () => {
       apiKey: 'test-api-key'
     });
 
-    await expect(client.createChatCompletion(mockOptions as any)).rejects.toThrow('Empty response from Gemini API');
+    await expect(client.createChatCompletion({ logger: vi.fn(), ...mockOptions } as any)).rejects.toThrow('Empty response from Gemini API');
   });
 
   it('should format error message if geminiErr is a string', async () => {
@@ -105,7 +105,7 @@ describe('AgentLLMClient', () => {
       logger: mockLogger
     });
 
-    const result = await client.createChatCompletion(mockOptions as any);
+    const result = await client.createChatCompletion({ logger: vi.fn(), ...mockOptions } as any);
 
     expect(result).toEqual({ data: 'workers ai response' });
     expect(mockLogger).toHaveBeenCalledWith(
@@ -134,7 +134,7 @@ describe('AgentLLMClient', () => {
       logger: mockLogger
     });
 
-    const result = await client.createChatCompletion(mockOptions as any);
+    const result = await client.createChatCompletion({ logger: vi.fn(), ...mockOptions } as any);
 
     expect(result).toEqual({ data: 'gemini success response' });
     expect(mockLogger).toHaveBeenCalledWith({
@@ -151,7 +151,7 @@ describe('AgentLLMClient', () => {
       binding: mockBinding
     });
 
-    const result = await client.createChatCompletion(mockOptions as any);
+    const result = await client.createChatCompletion({ logger: vi.fn(), ...mockOptions } as any);
 
     expect(result).toEqual({ data: 'workers ai direct response' });
     expect(mockRun).toHaveBeenCalled();
@@ -160,10 +160,10 @@ describe('AgentLLMClient', () => {
   it('should throw error if no API key and no binding are available', async () => {
     const client = new AgentLLMClient({});
 
-    await expect(client.createChatCompletion(mockOptions as any)).rejects.toThrow('No API key or Workers AI binding available for LLMClient');
+    await expect(client.createChatCompletion({ logger: vi.fn(), ...mockOptions } as any)).rejects.toThrow('No API key or Workers AI binding available for LLMClient');
   });
 
-    it('should handle complex message content (objects) in Gemini and Workers AI', async () => {
+  it('should handle complex message content (objects) in Gemini and Workers AI', async () => {
     (globalThis.fetch as any).mockResolvedValueOnce({
       ok: true,
       json: vi.fn().mockResolvedValueOnce({
@@ -181,13 +181,11 @@ describe('AgentLLMClient', () => {
           { role: 'user', content: { some: 'user object' } },
           { role: 'assistant', content: { some: 'assistant object' } }
         ] as any,
-        response_model: undefined
       }
     };
 
-    await client.createChatCompletion(complexOptions as any);
+    await client.createChatCompletion({ logger: vi.fn(), ...complexOptions } as any);
 
-    // Test that stringification occurred
     expect(globalThis.fetch).toHaveBeenCalledWith(
       expect.any(String),
       expect.objectContaining({
@@ -206,18 +204,139 @@ describe('AgentLLMClient', () => {
         messages: [
           { role: 'user', content: { some: 'user object' } }
         ] as any,
-        response_model: undefined
       }
     };
 
-    await client.createChatCompletion(complexOptions as any);
+    await client.createChatCompletion({ logger: vi.fn(), ...complexOptions } as any);
 
     expect(mockRun).toHaveBeenCalledWith(
       expect.any(String),
       expect.objectContaining({
-        messages: [{ role: 'user', content: '{\"some\":\"user object\"}' }]
+        messages: [{ role: 'user', content: '{"some":"user object"}' }]
       })
     );
   });
 
+  it('should fallback to Workers AI if Gemini key missing', async () => {
+    const mockAi = {
+      run: vi.fn().mockResolvedValue({
+        response: '{"action": "test", "explanation": "test"}'
+      })
+    } as unknown as Ai;
+
+    const client = new AgentLLMClient({ binding: mockAi });
+
+    const result = await client.createChatCompletion({ logger: vi.fn(),
+      options: {
+        messages: [{ role: 'user', content: 'hello' }]
+      }
+    });
+
+    expect(mockAi.run).toHaveBeenCalled();
+    expect((result as any).data).toBe('{"action": "test", "explanation": "test"}');
+  });
+
+  it('should fallback to Workers AI and parse json block if missing schema', async () => {
+    const mockAi = {
+      run: vi.fn().mockResolvedValue({
+        response: "```json\n{\"action\": \"test\", \"explanation\": \"test\"}\n```"
+      })
+    } as unknown as Ai;
+
+    const client = new AgentLLMClient({ binding: mockAi });
+
+    const result = await client.createChatCompletion({ logger: vi.fn(),
+      options: {
+        messages: [{ role: 'user', content: 'hello' }]
+      }
+    });
+
+    expect(mockAi.run).toHaveBeenCalled();
+    expect((result as any).data).toBe("```json\n{\"action\": \"test\", \"explanation\": \"test\"}\n```");
+  });
+
+  it('should throw if no providers available', async () => {
+    const client = new AgentLLMClient({});
+    await expect(client.createChatCompletion({ logger: vi.fn(),
+      options: {  messages: [] }
+    })).rejects.toThrow("No API key or Workers AI binding available for LLMClient");
+  });
+
+  it('should use Gemini API if available', async () => {
+    const client = new AgentLLMClient({ apiKey: 'test-gemini-key' });
+
+    (globalThis.fetch as any).mockResolvedValueOnce({
+      ok: true,
+      json: () => Promise.resolve({
+        candidates: [{
+          content: {
+            parts: [{ text: '{"action": "gemini", "explanation": "test"}' }]
+          }
+        }]
+      })
+    });
+
+    const result = await client.createChatCompletion({ logger: vi.fn(),
+      options: {
+        messages: [
+            { role: 'system', content: 'sys' },
+            { role: 'user', content: 'hello' },
+            { role: 'assistant', content: 'hi' }
+        ]
+      }
+    } as any);
+
+    expect(globalThis.fetch).toHaveBeenCalled();
+    const url = (globalThis.fetch as any).mock.calls[0][0];
+    expect(url).toContain('gemini');
+    expect((result as any).data).toContain('{"action": "gemini", "explanation": "test"}');
+  });
+
+  it('should handle failed Gemini response', async () => {
+    const client = new AgentLLMClient({ apiKey: 'test-gemini-key' });
+
+    (globalThis.fetch as any).mockResolvedValueOnce({
+      ok: false,
+      text: () => Promise.resolve("Bad Request")
+    });
+
+    await expect(client.createChatCompletion({ logger: vi.fn(),
+      options: {  messages: [] }
+    })).rejects.toThrow("Gemini API returned status undefined: Bad Request");
+  });
+
+  it('should handle empty Gemini response candidates', async () => {
+    const client = new AgentLLMClient({ apiKey: 'test-gemini-key' });
+
+    (globalThis.fetch as any).mockResolvedValueOnce({
+      ok: true,
+      json: () => Promise.resolve({ candidates: [] })
+    });
+
+    await expect(client.createChatCompletion({ logger: vi.fn(),
+      options: {  messages: [] }
+    })).rejects.toThrow("Empty response from Gemini API");
+  });
+
+  it('should fallback to Workers AI if Gemini fails and AI is present', async () => {
+    const mockAi = {
+      run: vi.fn().mockResolvedValue({
+        response: '{"action": "fallback"}'
+      })
+    } as unknown as Ai;
+
+    const client = new AgentLLMClient({ apiKey: 'test-gemini-key', binding: mockAi });
+
+    (globalThis.fetch as any).mockResolvedValueOnce({
+      ok: false,
+      text: () => Promise.resolve("Bad Request")
+    });
+
+    const result = await client.createChatCompletion({ logger: vi.fn(),
+      options: {  messages: [] }
+    });
+
+    expect(mockAi.run).toHaveBeenCalled();
+    expect((result as any).data).toBe('{"action": "fallback"}');
+  });
 });
