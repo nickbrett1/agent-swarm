@@ -32,7 +32,7 @@ describe('AgentLLMClient', () => {
       logger: mockLogger
     });
 
-    const result = await client.createChatCompletion(mockOptions as any);
+    const result = await client.createChatCompletion({ logger: vi.fn(), ...mockOptions } as any);
 
     expect(result).toEqual({ data: 'workers ai response' });
     expect(mockLogger).toHaveBeenCalledWith(
@@ -55,7 +55,7 @@ describe('AgentLLMClient', () => {
       logger: mockLogger
     });
 
-    await expect(client.createChatCompletion(mockOptions as any)).rejects.toThrow('Network error');
+    await expect(client.createChatCompletion({ logger: vi.fn(), ...mockOptions } as any)).rejects.toThrow('Network error');
 
     expect(mockLogger).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -76,7 +76,7 @@ describe('AgentLLMClient', () => {
       apiKey: 'test-api-key'
     });
 
-    await expect(client.createChatCompletion(mockOptions as any)).rejects.toThrow('Gemini API returned status 500: Internal Server Error');
+    await expect(client.createChatCompletion({ logger: vi.fn(), ...mockOptions } as any)).rejects.toThrow('Gemini API returned status 500: Internal Server Error');
   });
 
   it('should throw error if Gemini API returns empty response and no binding is available', async () => {
@@ -89,7 +89,7 @@ describe('AgentLLMClient', () => {
       apiKey: 'test-api-key'
     });
 
-    await expect(client.createChatCompletion(mockOptions as any)).rejects.toThrow('Empty response from Gemini API');
+    await expect(client.createChatCompletion({ logger: vi.fn(), ...mockOptions } as any)).rejects.toThrow('Empty response from Gemini API');
   });
 
   it('should format error message if geminiErr is a string', async () => {
@@ -105,7 +105,7 @@ describe('AgentLLMClient', () => {
       logger: mockLogger
     });
 
-    const result = await client.createChatCompletion(mockOptions as any);
+    const result = await client.createChatCompletion({ logger: vi.fn(), ...mockOptions } as any);
 
     expect(result).toEqual({ data: 'workers ai response' });
     expect(mockLogger).toHaveBeenCalledWith(
@@ -134,7 +134,7 @@ describe('AgentLLMClient', () => {
       logger: mockLogger
     });
 
-    const result = await client.createChatCompletion(mockOptions as any);
+    const result = await client.createChatCompletion({ logger: vi.fn(), ...mockOptions } as any);
 
     expect(result).toEqual({ data: 'gemini success response' });
     expect(mockLogger).toHaveBeenCalledWith({
@@ -151,7 +151,7 @@ describe('AgentLLMClient', () => {
       binding: mockBinding
     });
 
-    const result = await client.createChatCompletion(mockOptions as any);
+    const result = await client.createChatCompletion({ logger: vi.fn(), ...mockOptions } as any);
 
     expect(result).toEqual({ data: 'workers ai direct response' });
     expect(mockRun).toHaveBeenCalled();
@@ -160,7 +160,7 @@ describe('AgentLLMClient', () => {
   it('should throw error if no API key and no binding are available', async () => {
     const client = new AgentLLMClient({});
 
-    await expect(client.createChatCompletion(mockOptions as any)).rejects.toThrow('No API key or Workers AI binding available for LLMClient');
+    await expect(client.createChatCompletion({ logger: vi.fn(), ...mockOptions } as any)).rejects.toThrow('No API key or Workers AI binding available for LLMClient');
   });
 
   it('should handle complex message content (objects) in Gemini and Workers AI', async () => {
@@ -181,11 +181,10 @@ describe('AgentLLMClient', () => {
           { role: 'user', content: { some: 'user object' } },
           { role: 'assistant', content: { some: 'assistant object' } }
         ] as any,
-        response_model: undefined
       }
     };
 
-    await client.createChatCompletion(complexOptions as any);
+    await client.createChatCompletion({ logger: vi.fn(), ...complexOptions } as any);
 
     expect(globalThis.fetch).toHaveBeenCalledWith(
       expect.any(String),
@@ -205,11 +204,10 @@ describe('AgentLLMClient', () => {
         messages: [
           { role: 'user', content: { some: 'user object' } }
         ] as any,
-        response_model: undefined
       }
     };
 
-    await client.createChatCompletion(complexOptions as any);
+    await client.createChatCompletion({ logger: vi.fn(), ...complexOptions } as any);
 
     expect(mockRun).toHaveBeenCalledWith(
       expect.any(String),
@@ -228,9 +226,8 @@ describe('AgentLLMClient', () => {
 
     const client = new AgentLLMClient({ binding: mockAi });
 
-    const result = await client.createChatCompletion({
+    const result = await client.createChatCompletion({ logger: vi.fn(),
       options: {
-        model: 'test',
         messages: [{ role: 'user', content: 'hello' }]
       }
     });
@@ -248,9 +245,8 @@ describe('AgentLLMClient', () => {
 
     const client = new AgentLLMClient({ binding: mockAi });
 
-    const result = await client.createChatCompletion({
+    const result = await client.createChatCompletion({ logger: vi.fn(),
       options: {
-        model: 'test',
         messages: [{ role: 'user', content: 'hello' }]
       }
     });
@@ -261,8 +257,8 @@ describe('AgentLLMClient', () => {
 
   it('should throw if no providers available', async () => {
     const client = new AgentLLMClient({});
-    await expect(client.createChatCompletion({
-      options: { model: 'test', messages: [] }
+    await expect(client.createChatCompletion({ logger: vi.fn(),
+      options: {  messages: [] }
     })).rejects.toThrow("No API key or Workers AI binding available for LLMClient");
   });
 
@@ -280,20 +276,15 @@ describe('AgentLLMClient', () => {
       })
     });
 
-    const result = await client.createChatCompletion({
+    const result = await client.createChatCompletion({ logger: vi.fn(),
       options: {
-        model: 'test',
         messages: [
             { role: 'system', content: 'sys' },
             { role: 'user', content: 'hello' },
             { role: 'assistant', content: 'hi' }
         ]
-      },
-      response_model: {
-        name: "Test",
-        schema: {} as any
       }
-    });
+    } as any);
 
     expect(globalThis.fetch).toHaveBeenCalled();
     const url = (globalThis.fetch as any).mock.calls[0][0];
@@ -309,8 +300,8 @@ describe('AgentLLMClient', () => {
       text: () => Promise.resolve("Bad Request")
     });
 
-    await expect(client.createChatCompletion({
-      options: { model: 'test', messages: [] }
+    await expect(client.createChatCompletion({ logger: vi.fn(),
+      options: {  messages: [] }
     })).rejects.toThrow("Gemini API returned status undefined: Bad Request");
   });
 
@@ -322,8 +313,8 @@ describe('AgentLLMClient', () => {
       json: () => Promise.resolve({ candidates: [] })
     });
 
-    await expect(client.createChatCompletion({
-      options: { model: 'test', messages: [] }
+    await expect(client.createChatCompletion({ logger: vi.fn(),
+      options: {  messages: [] }
     })).rejects.toThrow("Empty response from Gemini API");
   });
 
@@ -341,8 +332,8 @@ describe('AgentLLMClient', () => {
       text: () => Promise.resolve("Bad Request")
     });
 
-    const result = await client.createChatCompletion({
-      options: { model: 'test', messages: [] }
+    const result = await client.createChatCompletion({ logger: vi.fn(),
+      options: {  messages: [] }
     });
 
     expect(mockAi.run).toHaveBeenCalled();
