@@ -30,6 +30,88 @@ vi.mock("@cloudflare/playwright", () => ({
   endpointURLString: vi.fn().mockReturnValue("wss://dummy-cdp-url"),
 }));
 
+describe("connectOverCDP patching", () => {
+    let originalConnectOverCDP: any;
+
+    beforeEach(async () => {
+        vi.resetModules();
+        originalConnectOverCDP = vi.fn().mockResolvedValue({ contexts: () => [{}] });
+        vi.doMock("@cloudflare/playwright", () => ({
+            chromium: { connectOverCDP: originalConnectOverCDP },
+            endpointURLString: vi.fn().mockReturnValue("wss://dummy-cdp-url")
+        }));
+    });
+
+    afterEach(() => {
+        vi.doUnmock("@cloudflare/playwright");
+    });
+
+    it("query params are stripped and correct args are passed", async () => {
+        const playwright = await import("@cloudflare/playwright");
+        await import("./browser.js");
+
+        await playwright.chromium.connectOverCDP("wss://example.com/v1/devtools/browser/ws?foo=bar", { custom: "opts" } as any);
+
+        expect(originalConnectOverCDP).toHaveBeenCalledWith("wss://example.com/v1/devtools/browser/ws", { custom: "opts" });
+    });
+
+    it("strips query params from options object", async () => {
+        const playwright = await import("@cloudflare/playwright");
+        await import("./browser.js");
+
+        await playwright.chromium.connectOverCDP({ endpointURL: "wss://example.com/v1/devtools/browser/ws?foo=bar", wsEndpoint: "wss://example.com/v1/devtools/browser/ws?foo=bar" } as any);
+
+        expect(originalConnectOverCDP).toHaveBeenCalledWith({ endpointURL: "wss://example.com/v1/devtools/browser/ws", wsEndpoint: "wss://example.com/v1/devtools/browser/ws" });
+    });
+
+    it("ignores invalid urls", async () => {
+        const playwright = await import("@cloudflare/playwright");
+        await import("./browser.js");
+
+        await playwright.chromium.connectOverCDP("invalid url");
+
+        expect(originalConnectOverCDP).toHaveBeenCalledWith("invalid url");
+    });
+
+    it("ignores invalid urls in object", async () => {
+        const playwright = await import("@cloudflare/playwright");
+        await import("./browser.js");
+
+        await playwright.chromium.connectOverCDP({endpointURL: "invalid url"} as any);
+
+        expect(originalConnectOverCDP).toHaveBeenCalledWith({endpointURL: "invalid url"});
+    });
+
+    it("throws new error if websocket upgrade fails", async () => {
+        originalConnectOverCDP.mockRejectedValueOnce(new Error("webSocket upgrade failed"));
+
+        const playwright = await import("@cloudflare/playwright");
+        await import("./browser.js");
+
+        await expect(playwright.chromium.connectOverCDP("wss://example.com/ws", {} as any)).rejects.toThrow("WebSocket upgrade failed in Playwright connectOverCDP:");
+    });
+
+    it("rethrows general connectOverCDP errors", async () => {
+        originalConnectOverCDP.mockRejectedValueOnce(new Error("general error"));
+
+        const playwright = await import("@cloudflare/playwright");
+        await import("./browser.js");
+
+        await expect(playwright.chromium.connectOverCDP("wss://example.com/ws", {} as any)).rejects.toThrow("general error");
+    });
+
+    it("creates new context if none exists", async () => {
+        const mockBrowser = { contexts: () => [], newContext: vi.fn().mockResolvedValue(undefined) };
+        originalConnectOverCDP.mockResolvedValueOnce(mockBrowser);
+
+        const playwright = await import("@cloudflare/playwright");
+        await import("./browser.js");
+
+        await playwright.chromium.connectOverCDP("wss://example.com/ws", {} as any);
+        expect(mockBrowser.newContext).toHaveBeenCalled();
+    });
+});
+
 const mockPage = {
   goto: vi.fn(),
   url: vi.fn().mockReturnValue("https://example.com"),

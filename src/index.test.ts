@@ -136,6 +136,176 @@ describe('ShopperAgent isSafeUrl Logic', () => {
   });
 });
 
+describe('ShopperAgent handleShoppingError logic', () => {
+  let agent: ShopperAgent;
+  let mockCtx: any;
+  let mockEnv: any;
+  let setStateSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    mockCtx = {};
+    mockEnv = {};
+    agent = new ShopperAgent(mockCtx, mockEnv);
+    agent.state = {
+      status: "running",
+      progress: 50,
+      history: [],
+      error: undefined
+    } as any;
+
+    // Explicitly set the mock function
+    agent.setState = vi.fn().mockImplementation((newState: any) => {
+        agent.state = { ...agent.state, ...newState };
+        return Promise.resolve();
+    });
+  });
+
+  it('handles browser closed/disconnected error after pay/submit click', () => {
+    agent.state.history = ["Action: click on pay button"];
+    const err = new Error("browser disconnected / closed");
+    const result = (agent as any).handleShoppingError(err);
+
+    expect(result).toContain("Status: completed");
+    expect(result).toContain("Successfully completed purchase.");
+    expect(agent.setState).toHaveBeenCalledWith(expect.objectContaining({
+      status: "completed"
+    }));
+  });
+
+  it('handles generic error by setting status to failed and throwing', () => {
+    agent.state.history = ["Action: viewed item"];
+    const err = new Error("some generic error");
+
+    expect(() => {
+      (agent as any).handleShoppingError(err);
+    }).toThrow("some generic error");
+
+    expect(agent.setState).toHaveBeenCalledWith(expect.objectContaining({
+      status: "failed",
+      lastError: "some generic error"
+    }));
+  });
+});
+
+describe('ShopperAgent runShopping logic', () => {
+  let agent: ShopperAgent;
+  let mockCtx: any;
+  let mockEnv: any;
+
+  beforeEach(() => {
+    mockCtx = {};
+    mockEnv = {
+        MYBROWSER: {},
+        AI: {},
+        GOOGLE_API_KEY: "dummy-key"
+    };
+    agent = new ShopperAgent(mockCtx, mockEnv);
+    agent.state = {
+      status: "running",
+      progress: 50,
+      history: [],
+      error: undefined
+    } as any;
+
+    agent.setState = vi.fn().mockImplementation((newState: any) => {
+        agent.state = { ...agent.state, ...newState };
+        return Promise.resolve();
+    });
+  });
+
+  it('handles successful shopping session', async () => {
+    vi.spyOn(agent as any, 'initializeShoppingSession').mockResolvedValue("http://target");
+    vi.spyOn(agent as any, 'executeShoppingLoop').mockResolvedValue("outcome summary");
+
+    const { StagehandBrowserHelper } = await import("./browser.js");
+
+    const initSpy = vi.spyOn(StagehandBrowserHelper.prototype, 'init').mockResolvedValue(undefined);
+    const gotoSpy = vi.spyOn(StagehandBrowserHelper.prototype, 'goto').mockResolvedValue(undefined);
+    const closeSpy = vi.spyOn(StagehandBrowserHelper.prototype, 'close').mockResolvedValue(undefined);
+
+    const result = await (agent as any).runShopping("persona", "url");
+
+    expect(result).toContain("Shopping Session Finished. Status: running. Summary: outcome summary");
+    expect(initSpy).toHaveBeenCalled();
+    expect(gotoSpy).toHaveBeenCalledWith("http://target");
+    expect(closeSpy).toHaveBeenCalled();
+
+    initSpy.mockRestore();
+    gotoSpy.mockRestore();
+    closeSpy.mockRestore();
+  });
+
+  it('handles failed shopping session', async () => {
+    vi.spyOn(agent as any, 'initializeShoppingSession').mockResolvedValue("http://target");
+    vi.spyOn(agent as any, 'executeShoppingLoop').mockRejectedValue(new Error("Shopping failed"));
+    const errSpy = vi.spyOn(agent as any, 'handleShoppingError').mockReturnValue("Handled Error");
+
+    const { StagehandBrowserHelper } = await import("./browser.js");
+
+    const initSpy = vi.spyOn(StagehandBrowserHelper.prototype, 'init').mockResolvedValue(undefined);
+    const gotoSpy = vi.spyOn(StagehandBrowserHelper.prototype, 'goto').mockResolvedValue(undefined);
+    const closeSpy = vi.spyOn(StagehandBrowserHelper.prototype, 'close').mockResolvedValue(undefined);
+
+    const result = await (agent as any).runShopping("persona", "url");
+
+    expect(result).toContain("Handled Error");
+    expect(closeSpy).toHaveBeenCalled();
+    expect(errSpy).toHaveBeenCalledWith(expect.any(Error));
+
+    initSpy.mockRestore();
+    gotoSpy.mockRestore();
+    closeSpy.mockRestore();
+  });
+});
+
+describe('ShopperAgent waitForUrlChange logic', () => {
+  let agent: ShopperAgent;
+  let mockCtx: any;
+  let mockEnv: any;
+
+  beforeEach(() => {
+    mockCtx = {};
+    mockEnv = {};
+    agent = new ShopperAgent(mockCtx, mockEnv);
+  });
+
+  it('settles quickly if url changes', async () => {
+    const mockHelper = {
+      wait: vi.fn().mockResolvedValue(undefined),
+      getPageUrl: vi.fn()
+        .mockResolvedValueOnce("http://start")
+        .mockResolvedValueOnce("http://end")
+    };
+
+    await (agent as any).waitForUrlChange(mockHelper, "http://start");
+
+    expect(mockHelper.wait).toHaveBeenCalledWith(500); // the loop wait
+    expect(mockHelper.wait).toHaveBeenCalledWith(2500); // the settle wait
+    expect(mockHelper.wait).not.toHaveBeenCalledWith(2000); // the cooldown wait
+  });
+
+  it('waits full loop and cooldown if url does not change', async () => {
+    const mockHelper = {
+      wait: vi.fn().mockResolvedValue(undefined),
+      getPageUrl: vi.fn().mockResolvedValue("http://start")
+    };
+
+    const originalDateNow = Date.now;
+    let time = 0;
+    vi.spyOn(Date, "now").mockImplementation(() => {
+      time += 2500; // Fast-forward time more than timeout (12000) over a few loops
+      return time;
+    });
+
+    await (agent as any).waitForUrlChange(mockHelper, "http://start");
+
+    expect(mockHelper.wait).toHaveBeenCalledWith(500); // inside the loop
+    expect(mockHelper.wait).toHaveBeenCalledWith(2000); // the final cooldown wait
+
+    Date.now = originalDateNow;
+  });
+});
+
 describe('ShopperAgent queryLLM Fallback Logic', () => {
   let mockFetch: any;
 
