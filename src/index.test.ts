@@ -146,22 +146,25 @@ describe('ShopperAgent handleShoppingError logic', () => {
     mockCtx = {};
     mockEnv = {};
     agent = new ShopperAgent(mockCtx, mockEnv);
-    agent.state = {
-      status: "running",
-      progress: 50,
-      history: [],
-      error: undefined
-    } as any;
+    Object.defineProperty(agent, 'state', {
+      value: {
+        status: "running",
+        progress: 50,
+        history: [],
+        error: undefined
+      },
+      writable: true
+    });
 
     // Explicitly set the mock function
     agent.setState = vi.fn().mockImplementation((newState: any) => {
-        agent.state = { ...agent.state, ...newState };
+        Object.defineProperty(agent, 'state', { value: { ...agent.state, ...newState }, writable: true });
         return Promise.resolve();
     });
   });
 
   it('handles browser closed/disconnected error after pay/submit click', () => {
-    agent.state.history = ["Action: click on pay button"];
+    Object.defineProperty(agent, 'state', { value: { ...agent.state, history: ["Action: click on pay button"] }, writable: true });
     const err = new Error("browser disconnected / closed");
     const result = (agent as any).handleShoppingError(err);
 
@@ -173,7 +176,7 @@ describe('ShopperAgent handleShoppingError logic', () => {
   });
 
   it('handles generic error by setting status to failed and throwing', () => {
-    agent.state.history = ["Action: viewed item"];
+    Object.defineProperty(agent, 'state', { value: { ...agent.state, history: ["Action: viewed item"] }, writable: true });
     const err = new Error("some generic error");
 
     expect(() => {
@@ -200,15 +203,18 @@ describe('ShopperAgent runShopping logic', () => {
         GOOGLE_API_KEY: "dummy-key"
     };
     agent = new ShopperAgent(mockCtx, mockEnv);
-    agent.state = {
-      status: "running",
-      progress: 50,
-      history: [],
-      error: undefined
-    } as any;
+    Object.defineProperty(agent, 'state', {
+      value: {
+        status: "running",
+        progress: 50,
+        history: [],
+        error: undefined
+      },
+      writable: true
+    });
 
     agent.setState = vi.fn().mockImplementation((newState: any) => {
-        agent.state = { ...agent.state, ...newState };
+        Object.defineProperty(agent, 'state', { value: { ...agent.state, ...newState }, writable: true });
         return Promise.resolve();
     });
   });
