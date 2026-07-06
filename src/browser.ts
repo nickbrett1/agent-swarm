@@ -119,7 +119,8 @@ if (chromium?.connectOverCDP) {
     }
 
     try {
-      const browser = await originalConnectOverCDP.apply(chromium, args as any);
+      // Use spread syntax with call to avoid Vitest vi.fn().apply serialization/stack issues in tests.
+      const browser = await originalConnectOverCDP.call(chromium, ...(args as unknown as [any]));
       // Remote/custom CDP connections in Cloudflare Workers do not initialize a default context.
       // We must ensure there is at least one context so that Stagehand doesn't encounter an undefined context.
       if (browser.contexts().length === 0) {
