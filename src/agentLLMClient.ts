@@ -9,7 +9,7 @@ import type { Ai } from "@cloudflare/workers-types";
 const modelId = "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
 
 export class AgentLLMClient extends LLMClient {
-  public type = "agent-llm" as any;
+  public type = "agent-llm" as const;
   private readonly binding?: Ai;
   private readonly apiKey?: string;
   private readonly logger?: (line: LogLine) => void;
