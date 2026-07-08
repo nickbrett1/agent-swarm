@@ -22,28 +22,36 @@ async function fillStripeLocators(frames: any[], card: string, expiry: string, c
 
   await Promise.all(frames.map(async (frame) => {
     try {
-      const cardLoc = frame.locator(cardSelector);
-      if (await cardLoc.count() > 0) {
-        await cardLoc.first().fill(card);
-        cardFilled = true;
+      if (!cardFilled) {
+        const cardLoc = frame.locator(cardSelector);
+        if (await cardLoc.count() > 0) {
+          await cardLoc.first().fill(card);
+          cardFilled = true;
+        }
       }
 
-      const expiryLoc = frame.locator(expirySelector);
-      if (await expiryLoc.count() > 0) {
-        await expiryLoc.first().fill(expiry);
-        expiryFilled = true;
+      if (!expiryFilled) {
+        const expiryLoc = frame.locator(expirySelector);
+        if (await expiryLoc.count() > 0) {
+          await expiryLoc.first().fill(expiry);
+          expiryFilled = true;
+        }
       }
 
-      const cvcLoc = frame.locator(cvcSelector);
-      if (await cvcLoc.count() > 0) {
-        await cvcLoc.first().fill(cvc);
-        cvcFilled = true;
+      if (!cvcFilled) {
+        const cvcLoc = frame.locator(cvcSelector);
+        if (await cvcLoc.count() > 0) {
+          await cvcLoc.first().fill(cvc);
+          cvcFilled = true;
+        }
       }
 
-      const nameLoc = frame.locator(nameSelector);
-      if (await nameLoc.count() > 0) {
-        await nameLoc.first().fill(name);
-        nameFilled = true;
+      if (!nameFilled) {
+        const nameLoc = frame.locator(nameSelector);
+        if (await nameLoc.count() > 0) {
+          await nameLoc.first().fill(name);
+          nameFilled = true;
+        }
       }
     } catch (frameErr) {
       console.warn("Ignored frame specific error while filling Stripe:", frameErr);
