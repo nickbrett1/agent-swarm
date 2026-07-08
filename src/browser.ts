@@ -22,36 +22,28 @@ async function fillStripeLocators(frames: any[], card: string, expiry: string, c
 
   await Promise.all(frames.map(async (frame) => {
     try {
-      if (!cardFilled) {
-        const cardLoc = frame.locator(cardSelector);
-        if (await cardLoc.count() > 0) {
-          await cardLoc.first().fill(card);
-          cardFilled = true;
-        }
+      const cardLoc = frame.locator(cardSelector);
+      if (await cardLoc.count() > 0) {
+        await cardLoc.first().fill(card);
+        cardFilled = true;
       }
 
-      if (!expiryFilled) {
-        const expiryLoc = frame.locator(expirySelector);
-        if (await expiryLoc.count() > 0) {
-          await expiryLoc.first().fill(expiry);
-          expiryFilled = true;
-        }
+      const expiryLoc = frame.locator(expirySelector);
+      if (await expiryLoc.count() > 0) {
+        await expiryLoc.first().fill(expiry);
+        expiryFilled = true;
       }
 
-      if (!cvcFilled) {
-        const cvcLoc = frame.locator(cvcSelector);
-        if (await cvcLoc.count() > 0) {
-          await cvcLoc.first().fill(cvc);
-          cvcFilled = true;
-        }
+      const cvcLoc = frame.locator(cvcSelector);
+      if (await cvcLoc.count() > 0) {
+        await cvcLoc.first().fill(cvc);
+        cvcFilled = true;
       }
 
-      if (!nameFilled) {
-        const nameLoc = frame.locator(nameSelector);
-        if (await nameLoc.count() > 0) {
-          await nameLoc.first().fill(name);
-          nameFilled = true;
-        }
+      const nameLoc = frame.locator(nameSelector);
+      if (await nameLoc.count() > 0) {
+        await nameLoc.first().fill(name);
+        nameFilled = true;
       }
     } catch (frameErr) {
       console.warn("Ignored frame specific error while filling Stripe:", frameErr);
@@ -412,21 +404,8 @@ export class StagehandBrowserHelper {
     // 1. Clean up stale sessions
     const cleared = await this.clearStaleSessions();
     if (cleared > 0) {
-      console.log("Waiting for sessions to close on Cloudflare (up to 10 seconds)...");
-      let retries = 0;
-      while (retries < 20) {
-        try {
-          const activeSessions = await puppeteer.sessions(this.browserBinding);
-          if (!activeSessions || activeSessions.length === 0) {
-            console.log("All stale sessions are closed.");
-            break;
-          }
-        } catch (err) {
-          console.warn("Error checking active sessions while waiting:", err);
-        }
-        await this.wait(500);
-        retries++;
-      }
+      console.log("Waiting 10 seconds for sessions to close on Cloudflare...");
+      await this.wait(10000);
     }
 
     // 2. Check for limits and build connection string
@@ -768,5 +747,13 @@ export class StagehandBrowserHelper {
 
   async wait(ms: number): Promise<void> {
     await new Promise((resolve) => setTimeout(resolve, ms));
+  }
+}
+
+export const _test_getPatchedConnectOverCDP = () => playwrightModule.chromium?.connectOverCDP;
+
+export function _test_setOriginalConnectOverCDP(fn: any) {
+  if (chromium && "connectOverCDP" in chromium) {
+    (chromium as any)._test_setOriginalConnectOverCDP?.(fn);
   }
 }
