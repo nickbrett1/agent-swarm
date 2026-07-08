@@ -682,7 +682,7 @@ function getCorsHeaders(request: Request): Record<string, string> {
   };
 }
 
-function getBrowserTimeLimit(env: Env, limits: any): any {
+export function getBrowserTimeLimit(env: Env, limits: any): any {
   const defaultLimit = (limits.maxConcurrentSessions || 1) >= 10 ? "unlimited" : 600;
   let browserTimeSecondsLimit = defaultLimit;
 
