@@ -637,7 +637,7 @@ export async function verifyHmacSignature(
       {
         name: 'PBKDF2',
         salt: encoder.encode('agent-swarm-salt'),
-        iterations: 100000,
+        iterations: 600000,
         hash: 'SHA-256'
       },
       keyMaterial,
