@@ -9,7 +9,7 @@ vi.mock("cloudflare:workers", () => ({
   },
 }));
 
-import workerDefault, { ShopperAgent, verifyHmacSignature } from './index';
+import workerDefault, { ShopperAgent, verifyHmacSignature, handleInfo } from './index';
 
 vi.mock('@cloudflare/puppeteer', () => ({
   default: {
@@ -466,6 +466,26 @@ describe('ShopperAgent queryLLM Fallback Logic', () => {
 
     await promise;
     vi.useRealTimers();
+  });
+});
+
+describe('handleInfo logic', () => {
+  it('should return a valid static JSON response payload', async () => {
+    const request = new Request('https://localhost/info', {
+      headers: { Origin: 'https://fintechnick.com' }
+    });
+    const response = handleInfo(request);
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('Content-Type')).toBe('application/json');
+    expect(response.headers.get('Access-Control-Allow-Origin')).toBe('https://fintechnick.com');
+
+    const data = await response.json() as any;
+    expect(data.name).toBe('agent-swarm');
+    expect(data.description).toBe('Autonomous browser rendering swarm that runs stateful agent sessions.');
+    expect(data.version).toBe('0.1.0');
+    expect(data.agents.ShopperAgent.description).toBe('Launches a browser rendering session to browse, search, and purchase products in Stripe test-mode.');
+    expect(data.agents.ShopperAgent.methods.runShopping.description).toBe('Triggers a browser automation sequence with the specified shopping persona.');
   });
 });
 

@@ -767,7 +767,7 @@ async function handleLimits(request: Request, env: Env): Promise<Response> {
   });
 }
 
-function handleInfo(request: Request): Response {
+export function handleInfo(request: Request): Response {
   const info = {
     name: "agent-swarm",
     description: "Autonomous browser rendering swarm that runs stateful agent sessions.",
