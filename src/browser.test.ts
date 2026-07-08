@@ -386,6 +386,28 @@ describe("StagehandBrowserHelper", () => {
     expect(mockLocator.fill).toHaveBeenCalledWith("John Doe", { timeout: 5000 });
   });
 
+  it("should return false if Playwright fill fallback fails", async () => {
+    await setupInteractiveElement({ tag: "input", type: "text", text: "", placeholder: "Enter name", name: "", role: "", xpath: "//input" });
+
+    mockPage.act.mockRejectedValueOnce(new Error("Act failed"));
+    const fallbackError = new Error("Locator fill failed");
+    const mockLocator = {
+      fill: vi.fn().mockRejectedValue(fallbackError),
+    };
+    mockPage.locator.mockReturnValueOnce(mockLocator);
+
+    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const success = await helper.typeElement("input_0", "John Doe");
+
+    expect(success).toBe(false);
+    expect(mockPage.locator).toHaveBeenCalledWith("xpath=//input");
+    expect(mockLocator.fill).toHaveBeenCalledWith("John Doe", { timeout: 5000 });
+    expect(consoleErrorSpy).toHaveBeenCalledWith("Playwright fallback type failed for input_0:", fallbackError);
+
+    consoleErrorSpy.mockRestore();
+  });
+
   it("should handle Stripe iframe using Stagehand act", async () => {
     // This test logic covers an obsolete scenario where `handleStripeIframe` attempts an initial `act` call directly instead of going through frames first.
     // However, looking at the code in `browser.ts`, the direct `act` call is used as a fallback if `page.frames()` filling fails or if frames are empty.
