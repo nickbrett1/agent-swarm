@@ -9,7 +9,7 @@ vi.mock("cloudflare:workers", () => ({
   },
 }));
 
-import workerDefault, { ShopperAgent, verifyHmacSignature, handleInfo } from './index';
+import workerDefault, { ShopperAgent, verifyHmacSignature, getBrowserTimeLimit } from './index';
 
 vi.mock('@cloudflare/puppeteer', () => ({
   default: {
@@ -860,5 +860,43 @@ describe("ShopperAgent - Full execution flow", () => {
             await (agent as any).executeShoppingLoop(helper, "buyer");
         } catch {}
         expect((agent as any).state.status).toBe("failed");
+    });
+});
+
+describe('getBrowserTimeLimit', () => {
+    it('returns "unlimited" when maxConcurrentSessions >= 10 and no overrides', () => {
+        const env = {} as any;
+        const limits = { maxConcurrentSessions: 10 };
+        expect(getBrowserTimeLimit(env, limits)).toBe('unlimited');
+    });
+
+    it('returns 600 when maxConcurrentSessions < 10 and no overrides', () => {
+        const env = {} as any;
+        const limits = { maxConcurrentSessions: 5 };
+        expect(getBrowserTimeLimit(env, limits)).toBe(600);
+    });
+
+    it('returns 600 when maxConcurrentSessions is undefined and no overrides', () => {
+        const env = {} as any;
+        const limits = {};
+        expect(getBrowserTimeLimit(env, limits)).toBe(600);
+    });
+
+    it('respects env.BROWSER_TIME_LIMIT_MOCK override', () => {
+        const env = { BROWSER_TIME_LIMIT_MOCK: '1200' } as any;
+        const limits = { maxConcurrentSessions: 10 }; // would normally be 'unlimited'
+        expect(getBrowserTimeLimit(env, limits)).toBe(1200);
+    });
+
+    it('respects limits.browserTimeSecondsLimit when BROWSER_TIME_LIMIT_MOCK is not set', () => {
+        const env = {} as any;
+        const limits = { maxConcurrentSessions: 2, browserTimeSecondsLimit: 1500 };
+        expect(getBrowserTimeLimit(env, limits)).toBe(1500);
+    });
+
+    it('prefers env.BROWSER_TIME_LIMIT_MOCK over limits.browserTimeSecondsLimit', () => {
+        const env = { BROWSER_TIME_LIMIT_MOCK: '1800' } as any;
+        const limits = { maxConcurrentSessions: 2, browserTimeSecondsLimit: 1500 };
+        expect(getBrowserTimeLimit(env, limits)).toBe(1800);
     });
 });
