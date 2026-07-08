@@ -494,7 +494,7 @@ ${textSummary}
         });
 
         if (!response.ok) {
-          throw new Error(`Gemini API returned status ${response.status}: ${await response.text()}`);
+          throw new Error(`Gemini API returned status ${response.status}`);
         }
 
         const data = await response.json() as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> };
