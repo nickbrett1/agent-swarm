@@ -47,14 +47,9 @@ export class ShopperAgent extends Agent<Env, ShopperState> {
    */
   private isPrivateIp(ipStr: string): boolean {
     try {
-      let ip = ipaddr.parse(ipStr);
-
-      // If it's an IPv4-mapped IPv6 address (e.g., ::ffff:192.168.1.1),
-      // extract the underlying IPv4 address to check its true range.
-      if (ip.kind() === 'ipv6' && (ip as ipaddr.IPv6).isIPv4MappedAddress()) {
-        ip = (ip as ipaddr.IPv6).toIPv4Address();
-      }
-
+      // Use ipaddr.process which automatically converts IPv4-mapped IPv6 addresses
+      // to their true IPv4 representation, preventing bypasses.
+      const ip = ipaddr.process(ipStr);
       const range = ip.range();
 
       return (
@@ -62,11 +57,12 @@ export class ShopperAgent extends Agent<Env, ShopperState> {
         range === 'loopback' ||
         range === 'linkLocal' ||
         range === 'unspecified' ||
-        range === 'uniqueLocal'
+        range === 'uniqueLocal' ||
+        range === 'ipv4Mapped'
       );
     } catch (ipParseErr) {
-      console.warn("Ignored error parsing IP address:", ipParseErr);
-      return false;
+      console.warn("Ignored error parsing IP address, treating as private/unsafe:", ipParseErr);
+      return true; // Fail closed to prevent bypass
     }
   }
 
