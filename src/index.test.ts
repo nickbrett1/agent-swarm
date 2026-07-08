@@ -278,22 +278,21 @@ describe('ShopperAgent waitForUrlChange logic', () => {
   it('settles quickly if url changes', async () => {
     const mockHelper = {
       wait: vi.fn().mockResolvedValue(undefined),
-      getPageUrl: vi.fn()
-        .mockResolvedValueOnce("http://start")
-        .mockResolvedValueOnce("http://end")
+      getPageUrl: vi.fn().mockResolvedValue("http://end"),
+      waitForUrlChange: vi.fn().mockResolvedValue(true)
     };
 
     await (agent as any).waitForUrlChange(mockHelper, "http://start");
 
-    expect(mockHelper.wait).toHaveBeenCalledWith(500); // the loop wait
-    expect(mockHelper.wait).toHaveBeenCalledWith(2500); // the settle wait
-    expect(mockHelper.wait).not.toHaveBeenCalledWith(2000); // the cooldown wait
+    expect(mockHelper.waitForUrlChange).toHaveBeenCalledWith("http://start", 12000);
+    expect(mockHelper.wait).not.toHaveBeenCalledWith(2000); // no cooldown needed
   });
 
   it('waits full loop and cooldown if url does not change', async () => {
     const mockHelper = {
       wait: vi.fn().mockResolvedValue(undefined),
-      getPageUrl: vi.fn().mockResolvedValue("http://start")
+      getPageUrl: vi.fn().mockResolvedValue("http://start"),
+      waitForUrlChange: vi.fn().mockResolvedValue(false)
     };
 
     const originalDateNow = Date.now;
@@ -305,7 +304,7 @@ describe('ShopperAgent waitForUrlChange logic', () => {
 
     await (agent as any).waitForUrlChange(mockHelper, "http://start");
 
-    expect(mockHelper.wait).toHaveBeenCalledWith(500); // inside the loop
+    expect(mockHelper.waitForUrlChange).toHaveBeenCalledWith("http://start", 12000);
     expect(mockHelper.wait).toHaveBeenCalledWith(2000); // the final cooldown wait
 
     Date.now = originalDateNow;

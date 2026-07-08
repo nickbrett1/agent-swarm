@@ -510,6 +510,18 @@ export class StagehandBrowserHelper {
     }
   }
 
+  async waitForUrlChange(startUrl: string, timeout: number = 12000): Promise<boolean> {
+    if (!this.stagehand) return false;
+    const page = this.getActivePage();
+    try {
+      await page.waitForURL((url: URL) => url.href !== startUrl, { timeout, waitUntil: "load" });
+      return true;
+    } catch (err) {
+      console.warn("Ignored error waiting for URL change:", err);
+      return false;
+    }
+  }
+
   /**
    * Scrapes the page, extracts interactive elements, and creates an element map.
    */

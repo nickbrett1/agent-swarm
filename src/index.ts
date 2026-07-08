@@ -142,20 +142,14 @@ export class ShopperAgent extends Agent<Env, ShopperState> {
 
   private async waitForUrlChange(helper: StagehandBrowserHelper, startUrl: string): Promise<void> {
     console.log(JSON.stringify({ message: "Pay/Submit/Buy button clicked, waiting for navigation/redirect to settle..." }));
-    const startTime = Date.now();
-    const timeout = 12000;
-    let urlChanged = false;
-    while (Date.now() - startTime < timeout) {
-      await helper.wait(500);
+
+    const urlChanged = await helper.waitForUrlChange(startUrl, 12000);
+
+    if (urlChanged) {
       const currentUrl = await helper.getPageUrl();
-      if (currentUrl !== startUrl) {
-        urlChanged = true;
-        console.log(JSON.stringify({ message: `URL changed from ${startUrl} to ${currentUrl}. Waiting 2.5s for page load settle...` }));
-        await helper.wait(2500);
-        break;
-      }
-    }
-    if (urlChanged === false) {
+      console.log(JSON.stringify({ message: `URL changed from ${startUrl} to ${currentUrl}.` }));
+      // We no longer need the fixed 2.5s wait since waitUntil: "load" ensures the page is ready.
+    } else {
       console.log(JSON.stringify({ message: "URL did not change after click within timeout. Cooldown 2s." }));
       await helper.wait(2000);
     }
