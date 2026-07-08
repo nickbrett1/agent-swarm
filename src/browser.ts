@@ -749,11 +749,3 @@ export class StagehandBrowserHelper {
     await new Promise((resolve) => setTimeout(resolve, ms));
   }
 }
-
-export const _test_getPatchedConnectOverCDP = () => playwrightModule.chromium?.connectOverCDP;
-
-export function _test_setOriginalConnectOverCDP(fn: any) {
-  if (chromium && "connectOverCDP" in chromium) {
-    (chromium as any)._test_setOriginalConnectOverCDP?.(fn);
-  }
-}
