@@ -678,6 +678,14 @@ function getCorsOrigin(request: Request): string {
   return "";
 }
 
+function getCorsHeaders(request: Request): Record<string, string> {
+  return {
+    "Access-Control-Allow-Origin": getCorsOrigin(request),
+    "Access-Control-Allow-Methods": "GET, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type"
+  };
+}
+
 function getBrowserTimeLimit(env: Env, limits: any): any {
   const defaultLimit = (limits.maxConcurrentSessions || 1) >= 10 ? "unlimited" : 600;
   let browserTimeSecondsLimit = defaultLimit;
@@ -745,11 +753,7 @@ async function buildLimitsResponse(env: Env) {
 function handleOptions(request: Request): Response {
   return new Response(null, {
     status: 204,
-    headers: {
-      "Access-Control-Allow-Origin": getCorsOrigin(request),
-      "Access-Control-Allow-Methods": "GET, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type"
-    }
+    headers: getCorsHeaders(request)
   });
 }
 
@@ -760,9 +764,7 @@ async function handleLimits(request: Request, env: Env): Promise<Response> {
     status: 200,
     headers: {
       "Content-Type": "application/json",
-      "Access-Control-Allow-Origin": getCorsOrigin(request),
-      "Access-Control-Allow-Methods": "GET, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type"
+      ...getCorsHeaders(request)
     }
   });
 }
@@ -807,9 +809,7 @@ function handleInfo(request: Request): Response {
     status: 200,
     headers: {
       "Content-Type": "application/json",
-      "Access-Control-Allow-Origin": getCorsOrigin(request),
-      "Access-Control-Allow-Methods": "GET, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type"
+      ...getCorsHeaders(request)
     }
   });
 }
