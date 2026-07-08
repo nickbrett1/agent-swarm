@@ -404,8 +404,21 @@ export class StagehandBrowserHelper {
     // 1. Clean up stale sessions
     const cleared = await this.clearStaleSessions();
     if (cleared > 0) {
-      console.log("Waiting 10 seconds for sessions to close on Cloudflare...");
-      await this.wait(10000);
+      console.log("Waiting for sessions to close on Cloudflare (up to 10 seconds)...");
+      let retries = 0;
+      while (retries < 20) {
+        try {
+          const activeSessions = await puppeteer.sessions(this.browserBinding);
+          if (!activeSessions || activeSessions.length === 0) {
+            console.log("All stale sessions are closed.");
+            break;
+          }
+        } catch (err) {
+          console.warn("Error checking active sessions while waiting:", err);
+        }
+        await this.wait(500);
+        retries++;
+      }
     }
 
     // 2. Check for limits and build connection string
