@@ -510,16 +510,42 @@ export class StagehandBrowserHelper {
     }
   }
 
-  async waitForUrlChange(startUrl: string, timeout: number = 12000): Promise<boolean> {
-    if (!this.stagehand) return false;
-    const page = this.getActivePage();
+  private async attemptRecoveryAfterError(page: any): Promise<{ elements: InteractiveElement[]; textSummary: string } | null> {
     try {
-      await page.waitForURL((url: URL) => url.href !== startUrl, { timeout, waitUntil: "load" });
-      return true;
-    } catch (err) {
-      console.warn("Ignored error waiting for URL change:", err);
-      return false;
+      await page.waitForLoadState("load", { timeout: 2000 });
+    } catch (waitErr) {
+      console.warn("Ignored error waiting for load state:", waitErr);
     }
+
+    try {
+      await page.frames();
+    } catch (framesErr) {
+      console.warn("Ignored error getting frames:", framesErr);
+    }
+
+    try {
+      const url = await this.getPageUrl();
+      if (url) {
+        const lowerUrl = url.toLowerCase();
+        if (lowerUrl.includes("success") ||
+            lowerUrl.includes("thank") ||
+            lowerUrl.includes("complete") ||
+            lowerUrl.includes("confirm") ||
+            lowerUrl.includes("receipt") ||
+            lowerUrl.includes("order")) {
+          console.log("Success/thank-you/order page detected during error. Returning dummy response.");
+          return {
+            elements: [],
+            textSummary: `Redirected to success page: ${url}`
+          };
+        }
+      }
+    } catch (urlErr) {
+      const urlErrMsg = urlErr instanceof Error ? urlErr.message : String(urlErr);
+      console.warn("Failed to get page URL in evaluation catch block:", urlErrMsg);
+    }
+
+    return null;
   }
 
   /**
@@ -549,40 +575,11 @@ export class StagehandBrowserHelper {
           throw err;
         }
         
-        try {
-          await page.waitForLoadState("load", { timeout: 2000 });
-        } catch (waitErr) {
-          console.warn("Ignored error waiting for load state:", waitErr);
+        const recoveryResponse = await this.attemptRecoveryAfterError(page);
+        if (recoveryResponse) {
+          return recoveryResponse;
         }
 
-        try {
-          await page.frames();
-        } catch (framesErr) {
-          console.warn("Ignored error getting frames:", framesErr);
-        }
-
-        try {
-          const url = await this.getPageUrl();
-          if (url) {
-            const lowerUrl = url.toLowerCase();
-            if (lowerUrl.includes("success") ||
-                lowerUrl.includes("thank") ||
-                lowerUrl.includes("complete") ||
-                lowerUrl.includes("confirm") ||
-                lowerUrl.includes("receipt") ||
-                lowerUrl.includes("order")) {
-              console.log("Success/thank-you/order page detected during error. Returning dummy response.");
-              return {
-                elements: [], 
-                textSummary: `Redirected to success page: ${url}`
-              };
-            }
-          }
-        } catch (urlErr) {
-          const urlErrMsg = urlErr instanceof Error ? urlErr.message : String(urlErr);
-          console.warn("Failed to get page URL in evaluation catch block:", urlErrMsg);
-        }
-        
         if (attempts >= maxAttempts) {
           const isDetachedFrameError = message.toLowerCase().includes("detached") || 
                                        message.toLowerCase().includes("destroyed") || 

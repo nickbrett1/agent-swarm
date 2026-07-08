@@ -491,7 +491,7 @@ describe('handleInfo logic', () => {
 describe('verifyHmacSignature', () => {
   const secret = 'test-secret';
 
-  async function generateTestSignature(expiryStr: string, overrideSecret = secret) {
+  async function generateTestSignature(expiryStr: string, overrideSecret = secret, customSalt = 'agent-swarm-salt') {
     const encoder = new TextEncoder();
     const keyMaterial = await crypto.subtle.importKey(
       'raw',
@@ -503,7 +503,7 @@ describe('verifyHmacSignature', () => {
     const key = await crypto.subtle.deriveKey(
       {
         name: 'PBKDF2',
-        salt: encoder.encode('agent-swarm-salt'),
+        salt: encoder.encode(customSalt),
         iterations: 600000,
         hash: 'SHA-256'
       },
@@ -518,10 +518,36 @@ describe('verifyHmacSignature', () => {
       .join('');
   }
 
-  it('should return true for a valid signature and unexpired token', async () => {
+  it('should return true for a valid signature and unexpired token with default salt', async () => {
     const expiry = (Date.now() + 100000).toString();
     const signature = await generateTestSignature(expiry);
     const result = await verifyHmacSignature(expiry, signature, secret);
+    expect(result).toBe(true);
+  });
+
+  it('should return true for a valid signature with custom salt', async () => {
+    const expiry = (Date.now() + 100000).toString();
+    const customSalt = 'my-custom-secure-salt';
+    const signature = await generateTestSignature(expiry, secret, customSalt);
+
+    // First, verify it fails if we don't pass the custom salt (default fallback only)
+    const failResult = await verifyHmacSignature(expiry, signature, secret);
+    expect(failResult).toBe(false);
+
+    // Now verify it succeeds with the custom salt passed
+    const result = await verifyHmacSignature(expiry, signature, secret, customSalt);
+    expect(result).toBe(true);
+  });
+
+  it('should return true using fallback (legacy backwards compatibility) when custom salt is provided but signature used default salt', async () => {
+    const expiry = (Date.now() + 100000).toString();
+    const customSalt = 'my-custom-secure-salt';
+
+    // Generate signature using DEFAULT salt 'agent-swarm-salt'
+    const signature = await generateTestSignature(expiry, secret, 'agent-swarm-salt');
+
+    // Pass custom salt to verifyHmacSignature; it should fail the custom salt check and fallback to default salt successfully
+    const result = await verifyHmacSignature(expiry, signature, secret, customSalt);
     expect(result).toBe(true);
   });
 
