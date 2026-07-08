@@ -334,6 +334,32 @@ describe("StagehandBrowserHelper", () => {
     expect(mockPage.evaluate).toHaveBeenCalledWith(expect.any(Function), "//button");
   });
 
+  it("should return false if Eval fallback click fails", async () => {
+    await setupInteractiveElement({ tag: "button", type: "", text: "Click Me", placeholder: "", name: "", role: "", xpath: "//button" });
+
+    mockPage.act.mockRejectedValueOnce(new Error("Act failed"));
+    const mockLocator = {
+      click: vi.fn().mockRejectedValue(new Error("Locator click failed")),
+    };
+    mockPage.locator.mockReturnValueOnce(mockLocator);
+
+    // Direct evaluate mock rejects
+    mockPage.evaluate.mockRejectedValueOnce(new Error("Eval fallback failed"));
+
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const success = await helper.clickElement("button_0");
+
+    expect(success).toBe(false);
+    expect(consoleSpy).toHaveBeenCalledWith(
+      "Eval fallback click failed for button_0:",
+      expect.any(Error)
+    );
+    expect(mockPage.evaluate).toHaveBeenCalledWith(expect.any(Function), "//button");
+
+    consoleSpy.mockRestore();
+  });
+
   it("should type element successfully using Stagehand act", async () => {
     await setupInteractiveElement({ tag: "input", type: "text", text: "", placeholder: "Enter name", name: "", role: "", xpath: "//input" });
 
