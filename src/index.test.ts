@@ -469,6 +469,26 @@ describe('ShopperAgent queryLLM Fallback Logic', () => {
   });
 });
 
+describe('handleInfo logic', () => {
+  it('should return a valid static JSON response payload', async () => {
+    const request = new Request('https://localhost/info', {
+      headers: { Origin: 'https://fintechnick.com' }
+    });
+    const response = handleInfo(request);
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('Content-Type')).toBe('application/json');
+    expect(response.headers.get('Access-Control-Allow-Origin')).toBe('https://fintechnick.com');
+
+    const data = await response.json() as any;
+    expect(data.name).toBe('agent-swarm');
+    expect(data.description).toBe('Autonomous browser rendering swarm that runs stateful agent sessions.');
+    expect(data.version).toBe('0.1.0');
+    expect(data.agents.ShopperAgent.description).toBe('Launches a browser rendering session to browse, search, and purchase products in Stripe test-mode.');
+    expect(data.agents.ShopperAgent.methods.runShopping.description).toBe('Triggers a browser automation sequence with the specified shopping persona.');
+  });
+});
+
 describe('verifyHmacSignature', () => {
   const secret = 'test-secret';
 
@@ -485,7 +505,7 @@ describe('verifyHmacSignature', () => {
       {
         name: 'PBKDF2',
         salt: encoder.encode('agent-swarm-salt'),
-        iterations: 100000,
+        iterations: 600000,
         hash: 'SHA-256'
       },
       keyMaterial,
@@ -694,14 +714,14 @@ describe('ShopperAgent isSafeUrl validation', () => {
 
 
 
-  it('should handle IP parsing errors gracefully and return false in isPrivateIp (treating as non-private/safe if otherwise valid)', async () => {
-    vi.spyOn(ipaddr, 'parse').mockImplementationOnce(() => {
+  it('should handle IP parsing errors gracefully and return true in isPrivateIp (treating as private/unsafe to fail closed)', async () => {
+    vi.spyOn(ipaddr, 'process').mockImplementationOnce(() => {
       throw new Error('mock parse error');
     });
     // This will hit ipaddr.isValid(hostname) inside isSafeUrl (which returns true for 1.1.1.1),
-    // then call isPrivateIp, which will throw, catch the error, and return false.
-    // Since it returns false for "is it private?", isSafeUrl will return !false -> true.
-    expect(await agent.isSafeUrl('https://1.1.1.1')).toBe(true);
+    // then call isPrivateIp, which will throw, catch the error, and return true.
+    // Since it returns true for "is it private?", isSafeUrl will return !true -> false.
+    expect(await agent.isSafeUrl('https://1.1.1.1')).toBe(false);
   });
 
   const testCases = [

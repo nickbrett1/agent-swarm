@@ -47,14 +47,9 @@ export class ShopperAgent extends Agent<Env, ShopperState> {
    */
   private isPrivateIp(ipStr: string): boolean {
     try {
-      let ip = ipaddr.parse(ipStr);
-
-      // If it's an IPv4-mapped IPv6 address (e.g., ::ffff:192.168.1.1),
-      // extract the underlying IPv4 address to check its true range.
-      if (ip.kind() === 'ipv6' && (ip as ipaddr.IPv6).isIPv4MappedAddress()) {
-        ip = (ip as ipaddr.IPv6).toIPv4Address();
-      }
-
+      // Use ipaddr.process which automatically converts IPv4-mapped IPv6 addresses
+      // to their true IPv4 representation, preventing bypasses.
+      const ip = ipaddr.process(ipStr);
       const range = ip.range();
 
       return (
@@ -62,11 +57,12 @@ export class ShopperAgent extends Agent<Env, ShopperState> {
         range === 'loopback' ||
         range === 'linkLocal' ||
         range === 'unspecified' ||
-        range === 'uniqueLocal'
+        range === 'uniqueLocal' ||
+        range === 'ipv4Mapped'
       );
     } catch (ipParseErr) {
-      console.warn("Ignored error parsing IP address:", ipParseErr);
-      return false;
+      console.warn("Ignored error parsing IP address, treating as private/unsafe:", ipParseErr);
+      return true; // Fail closed to prevent bypass
     }
   }
 
@@ -131,7 +127,7 @@ export class ShopperAgent extends Agent<Env, ShopperState> {
         // We just check the data field for any returned IP.
         if (ipaddr.isValid(record.data)) {
           if (this.isPrivateIp(record.data)) {
-            console.warn(`DNS resolution for ${hostname} returned a private IP: ${record.data}`);
+            console.warn(`DNS resolution for ${hostname} returned a private IP.`);
             return false;
           }
         }
@@ -494,7 +490,7 @@ ${textSummary}
         });
 
         if (!response.ok) {
-          throw new Error(`Gemini API returned status ${response.status}: ${await response.text()}`);
+          throw new Error(`Gemini API returned status ${response.status}`);
         }
 
         const data = await response.json() as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> };
@@ -637,7 +633,7 @@ export async function verifyHmacSignature(
       {
         name: 'PBKDF2',
         salt: encoder.encode('agent-swarm-salt'),
-        iterations: 100000,
+        iterations: 600000,
         hash: 'SHA-256'
       },
       keyMaterial,
@@ -678,7 +674,15 @@ function getCorsOrigin(request: Request): string {
   return "";
 }
 
-export function getBrowserTimeLimit(env: Env, limits: any): any {
+function getCorsHeaders(request: Request): Record<string, string> {
+  return {
+    "Access-Control-Allow-Origin": getCorsOrigin(request),
+    "Access-Control-Allow-Methods": "GET, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type"
+  };
+}
+
+function getBrowserTimeLimit(env: Env, limits: any): any {
   const defaultLimit = (limits.maxConcurrentSessions || 1) >= 10 ? "unlimited" : 600;
   let browserTimeSecondsLimit = defaultLimit;
 
@@ -745,11 +749,7 @@ async function buildLimitsResponse(env: Env) {
 function handleOptions(request: Request): Response {
   return new Response(null, {
     status: 204,
-    headers: {
-      "Access-Control-Allow-Origin": getCorsOrigin(request),
-      "Access-Control-Allow-Methods": "GET, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type"
-    }
+    headers: getCorsHeaders(request)
   });
 }
 
@@ -760,14 +760,12 @@ async function handleLimits(request: Request, env: Env): Promise<Response> {
     status: 200,
     headers: {
       "Content-Type": "application/json",
-      "Access-Control-Allow-Origin": getCorsOrigin(request),
-      "Access-Control-Allow-Methods": "GET, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type"
+      ...getCorsHeaders(request)
     }
   });
 }
 
-function handleInfo(request: Request): Response {
+export function handleInfo(request: Request): Response {
   const info = {
     name: "agent-swarm",
     description: "Autonomous browser rendering swarm that runs stateful agent sessions.",
@@ -807,9 +805,7 @@ function handleInfo(request: Request): Response {
     status: 200,
     headers: {
       "Content-Type": "application/json",
-      "Access-Control-Allow-Origin": getCorsOrigin(request),
-      "Access-Control-Allow-Methods": "GET, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type"
+      ...getCorsHeaders(request)
     }
   });
 }

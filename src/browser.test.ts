@@ -334,6 +334,32 @@ describe("StagehandBrowserHelper", () => {
     expect(mockPage.evaluate).toHaveBeenCalledWith(expect.any(Function), "//button");
   });
 
+  it("should return false if Eval fallback click fails", async () => {
+    await setupInteractiveElement({ tag: "button", type: "", text: "Click Me", placeholder: "", name: "", role: "", xpath: "//button" });
+
+    mockPage.act.mockRejectedValueOnce(new Error("Act failed"));
+    const mockLocator = {
+      click: vi.fn().mockRejectedValue(new Error("Locator click failed")),
+    };
+    mockPage.locator.mockReturnValueOnce(mockLocator);
+
+    // Direct evaluate mock rejects
+    mockPage.evaluate.mockRejectedValueOnce(new Error("Eval fallback failed"));
+
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const success = await helper.clickElement("button_0");
+
+    expect(success).toBe(false);
+    expect(consoleSpy).toHaveBeenCalledWith(
+      "Eval fallback click failed for button_0:",
+      expect.any(Error)
+    );
+    expect(mockPage.evaluate).toHaveBeenCalledWith(expect.any(Function), "//button");
+
+    consoleSpy.mockRestore();
+  });
+
   it("should type element successfully using Stagehand act", async () => {
     await setupInteractiveElement({ tag: "input", type: "text", text: "", placeholder: "Enter name", name: "", role: "", xpath: "//input" });
 
@@ -358,6 +384,28 @@ describe("StagehandBrowserHelper", () => {
     expect(success).toBe(true);
     expect(mockPage.locator).toHaveBeenCalledWith("xpath=//input");
     expect(mockLocator.fill).toHaveBeenCalledWith("John Doe", { timeout: 5000 });
+  });
+
+  it("should return false if Playwright fill fallback fails", async () => {
+    await setupInteractiveElement({ tag: "input", type: "text", text: "", placeholder: "Enter name", name: "", role: "", xpath: "//input" });
+
+    mockPage.act.mockRejectedValueOnce(new Error("Act failed"));
+    const fallbackError = new Error("Locator fill failed");
+    const mockLocator = {
+      fill: vi.fn().mockRejectedValue(fallbackError),
+    };
+    mockPage.locator.mockReturnValueOnce(mockLocator);
+
+    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const success = await helper.typeElement("input_0", "John Doe");
+
+    expect(success).toBe(false);
+    expect(mockPage.locator).toHaveBeenCalledWith("xpath=//input");
+    expect(mockLocator.fill).toHaveBeenCalledWith("John Doe", { timeout: 5000 });
+    expect(consoleErrorSpy).toHaveBeenCalledWith("Playwright fallback type failed for input_0:", fallbackError);
+
+    consoleErrorSpy.mockRestore();
   });
 
   it("should handle Stripe iframe using Stagehand act", async () => {
