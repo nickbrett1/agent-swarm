@@ -19,6 +19,21 @@ describe('AgentLLMClient', () => {
     }
   };
 
+  it('should explicitly fallback to Workers AI if callGeminiAPI throws an error', async () => {
+    const mockRun = vi.fn().mockResolvedValueOnce({ response: 'workers ai direct response' });
+    const mockBinding = { run: mockRun } as unknown as Ai;
+    const client = new AgentLLMClient({ apiKey: 'test-api-key', binding: mockBinding });
+
+    vi.spyOn(client as any, 'callGeminiAPI').mockRejectedValueOnce(new Error('Gemini simulated error'));
+
+    const result = await client.createChatCompletion({
+      logger: vi.fn(),
+      options: { messages: [{ role: 'user', content: 'hello' }] }
+    } as any);
+
+    expect(result).toEqual({ data: 'workers ai direct response' });
+    expect(mockRun).toHaveBeenCalled();
+  });
   it('should fallback to Workers AI if Gemini API call fails and binding is available', async () => {
     (globalThis.fetch as any).mockRejectedValueOnce(new Error('Network error'));
 
