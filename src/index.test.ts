@@ -714,14 +714,14 @@ describe('ShopperAgent isSafeUrl validation', () => {
 
 
 
-  it('should handle IP parsing errors gracefully and return false in isPrivateIp (treating as non-private/safe if otherwise valid)', async () => {
-    vi.spyOn(ipaddr, 'parse').mockImplementationOnce(() => {
+  it('should handle IP parsing errors gracefully and return true in isPrivateIp (treating as private/unsafe to fail closed)', async () => {
+    vi.spyOn(ipaddr, 'process').mockImplementationOnce(() => {
       throw new Error('mock parse error');
     });
     // This will hit ipaddr.isValid(hostname) inside isSafeUrl (which returns true for 1.1.1.1),
-    // then call isPrivateIp, which will throw, catch the error, and return false.
-    // Since it returns false for "is it private?", isSafeUrl will return !false -> true.
-    expect(await agent.isSafeUrl('https://1.1.1.1')).toBe(true);
+    // then call isPrivateIp, which will throw, catch the error, and return true.
+    // Since it returns true for "is it private?", isSafeUrl will return !true -> false.
+    expect(await agent.isSafeUrl('https://1.1.1.1')).toBe(false);
   });
 
   const testCases = [
