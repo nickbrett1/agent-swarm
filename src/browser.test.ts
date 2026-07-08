@@ -644,6 +644,38 @@ describe("StagehandBrowserHelper uncovered methods", () => {
 
         await expect(helper.init()).rejects.toThrow("Unable to create new browser - Cloudflare Limits: Active Sessions=1/4, Acquisitions Allowed=1, Time Until Next Acquisition=0ms");
     });
+
+    it("should return false when stagehand is null in waitForUrlChange", async () => {
+        const helper = new (await import("./browser.js")).StagehandBrowserHelper({});
+        const res = await helper.waitForUrlChange("http://test.com");
+        expect(res).toBe(false);
+    });
+
+    it("should call waitForURL when stagehand is initialized", async () => {
+        const helper = new (await import("./browser.js")).StagehandBrowserHelper({});
+        const mockPage = { waitForURL: vi.fn().mockResolvedValue(true) };
+        vi.spyOn(helper as any, 'getActivePage').mockReturnValue(mockPage);
+        (helper as any).stagehand = {}; // mock initialized
+
+        const res = await helper.waitForUrlChange("http://test.com", 5000);
+
+        expect(res).toBe(true);
+        expect(mockPage.waitForURL).toHaveBeenCalledWith(expect.any(Function), { timeout: 5000, waitUntil: "load" });
+    });
+
+    it("should return false and log warning if waitForURL throws an error", async () => {
+        const helper = new (await import("./browser.js")).StagehandBrowserHelper({});
+        const mockPage = { waitForURL: vi.fn().mockRejectedValue(new Error("Timeout")) };
+        vi.spyOn(helper as any, 'getActivePage').mockReturnValue(mockPage);
+        (helper as any).stagehand = {}; // mock initialized
+        vi.spyOn(console, "warn").mockImplementation(() => {});
+
+        const res = await helper.waitForUrlChange("http://test.com", 5000);
+
+        expect(res).toBe(false);
+        expect(console.warn).toHaveBeenCalledWith("Ignored error waiting for URL change:", expect.any(Error));
+        (console.warn as any).mockRestore();
+    });
 });
 
 describe("StagehandBrowserHelper uncovered methods", () => {

@@ -15,7 +15,6 @@ export interface Env {
   STRIPE_TEST_CVC?: string;
   STRIPE_TEST_NAME?: string;
   AGENT_SWARM_SECRET?: string;
-  AGENT_SWARM_SALT?: string;
   BROWSER_TIME_LIMIT_MOCK?: string | number;
 }
 
@@ -143,20 +142,14 @@ export class ShopperAgent extends Agent<Env, ShopperState> {
 
   private async waitForUrlChange(helper: StagehandBrowserHelper, startUrl: string): Promise<void> {
     console.log(JSON.stringify({ message: "Pay/Submit/Buy button clicked, waiting for navigation/redirect to settle..." }));
-    const startTime = Date.now();
-    const timeout = 12000;
-    let urlChanged = false;
-    while (Date.now() - startTime < timeout) {
-      await helper.wait(500);
+
+    const urlChanged = await helper.waitForUrlChange(startUrl, 12000);
+
+    if (urlChanged) {
       const currentUrl = await helper.getPageUrl();
-      if (currentUrl !== startUrl) {
-        urlChanged = true;
-        console.log(JSON.stringify({ message: `URL changed from ${startUrl} to ${currentUrl}. Waiting 2.5s for page load settle...` }));
-        await helper.wait(2500);
-        break;
-      }
-    }
-    if (urlChanged === false) {
+      console.log(JSON.stringify({ message: `URL changed from ${startUrl} to ${currentUrl}.` }));
+      // We no longer need the fixed 2.5s wait since waitUntil: "load" ensures the page is ready.
+    } else {
       console.log(JSON.stringify({ message: "URL did not change after click within timeout. Cooldown 2s." }));
       await helper.wait(2000);
     }
@@ -607,8 +600,7 @@ ${textSummary}
 export async function verifyHmacSignature(
   expiryStr: string | null,
   signatureHex: string | null,
-  secret: string,
-  customSalt?: string
+  secret: string
 ): Promise<boolean> {
   if (!expiryStr || !signatureHex) return false;
 
@@ -630,6 +622,20 @@ export async function verifyHmacSignature(
       ['deriveKey']
     );
 
+    // Derive a strong 256-bit key for HMAC using PBKDF2
+    const key = await crypto.subtle.deriveKey(
+      {
+        name: 'PBKDF2',
+        salt: encoder.encode('agent-swarm-salt'),
+        iterations: 600000,
+        hash: 'SHA-256'
+      },
+      keyMaterial,
+      { name: 'HMAC', hash: 'SHA-256', length: 256 },
+      false,
+      ['verify']
+    );
+
     // Convert hex signature back to Uint8Array
     const matches = signatureHex.match(/.{1,2}/g);
     if (!matches) {
@@ -639,36 +645,13 @@ export async function verifyHmacSignature(
       matches.map(byte => parseInt(byte, 16))
     );
 
-    const verifyWithSalt = async (saltStr: string) => {
-      // Derive a strong 256-bit key for HMAC using PBKDF2
-      const key = await crypto.subtle.deriveKey(
-        {
-          name: 'PBKDF2',
-          salt: encoder.encode(saltStr),
-          iterations: 600000,
-          hash: 'SHA-256'
-        },
-        keyMaterial,
-        { name: 'HMAC', hash: 'SHA-256', length: 256 },
-        false,
-        ['verify']
-      );
-
-      // Verify the expiry timestamp matches the signature
-      return await crypto.subtle.verify(
-        'HMAC',
-        key,
-        sigBytes,
-        encoder.encode(expiryStr)
-      );
-    };
-
-    if (customSalt) {
-      const isCustomValid = await verifyWithSalt(customSalt);
-      if (isCustomValid) return true;
-    }
-
-    return await verifyWithSalt('agent-swarm-salt');
+    // Verify the expiry timestamp matches the signature
+    return await crypto.subtle.verify(
+      'HMAC',
+      key,
+      sigBytes,
+      encoder.encode(expiryStr)
+    );
   } catch (err) {
     console.error("Signature verification error:", err);
     return false;
@@ -826,10 +809,9 @@ async function handleAgentRequest(request: Request, env: Env, url: URL): Promise
   const signature = url.searchParams.get("signature");
 
   const secret = env.AGENT_SWARM_SECRET;
-  const customSalt = env.AGENT_SWARM_SALT;
 
   if (secret) {
-    const isAuthorized = await verifyHmacSignature(expiry, signature, secret, customSalt);
+    const isAuthorized = await verifyHmacSignature(expiry, signature, secret);
     
     if (!isAuthorized) {
       return new Response("Unauthorized Swarm Connection: Invalid or expired signature", {
