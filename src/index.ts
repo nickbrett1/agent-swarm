@@ -131,7 +131,7 @@ export class ShopperAgent extends Agent<Env, ShopperState> {
         // We just check the data field for any returned IP.
         if (ipaddr.isValid(record.data)) {
           if (this.isPrivateIp(record.data)) {
-            console.warn(`DNS resolution for ${hostname} returned a private IP: ${record.data}`);
+            console.warn(`DNS resolution for ${hostname} returned a private IP.`);
             return false;
           }
         }
