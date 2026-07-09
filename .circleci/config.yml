@@ -40,6 +40,11 @@ jobs:
       - run:
           name: Test
           command: npm run test
+      - run:
+          name: Install Java 21 JRE for SonarCloud Scanner
+          command: |
+            sudo apt-get update
+            sudo apt-get install -y openjdk-21-jre-headless
       - sonarcloud/scan
 
 
