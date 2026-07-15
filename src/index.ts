@@ -665,7 +665,7 @@ export async function verifyHmacSignature(
   }
 }
 
-const ALLOWED_ORIGINS = new Set(["https://fintechnick.com", "https://localhost:3000"]);
+const ALLOWED_ORIGINS = new Set(["https://fintechnick.com"]);
 
 function getCorsOrigin(request: Request): string {
   const origin = request.headers.get("Origin");
