@@ -1,8 +1,25 @@
 import { Agent, routeAgentRequest, callable } from "agents";
 import { StagehandBrowserHelper } from "./browser.js";
-import puppeteer, { BrowserWorker } from "@cloudflare/puppeteer";
+import puppeteer, { BrowserWorker, LimitsResponse } from "@cloudflare/puppeteer";
 import type { Ai } from "@cloudflare/workers-types";
+
 import ipaddr from "ipaddr.js";
+
+export interface ExtendedLimitsResponse extends LimitsResponse {
+  browserTimeSecondsLimit?: number | "unlimited";
+  usedBrowserTimeSeconds?: number;
+  timeUntilBrowserTimeReset?: number;
+}
+
+export interface BrowserLimits extends Partial<ExtendedLimitsResponse> {
+  configured: boolean;
+  maxConcurrentSessions?: number;
+  activeSessionsCount?: number;
+  allowedBrowserAcquisitions?: number;
+  timeUntilNextAcquisition?: number;
+  browserTimeSecondsIncluded?: number;
+  error?: string;
+}
 
 export interface Env {
   MYBROWSER: BrowserWorker;
@@ -676,12 +693,12 @@ function getCorsHeaders(request: Request): Record<string, string> {
   };
 }
 
-export function getBrowserTimeLimit(env: Env, limits: any): any {
+export function getBrowserTimeLimit(env: Env, limits: ExtendedLimitsResponse): number | "unlimited" {
   const defaultLimit = (limits.maxConcurrentSessions || 1) >= 10 ? "unlimited" : 600;
-  let browserTimeSecondsLimit = defaultLimit;
+  let browserTimeSecondsLimit: number | "unlimited" = defaultLimit;
 
   if (env.BROWSER_TIME_LIMIT_MOCK !== undefined) {
-    browserTimeSecondsLimit = Number(env.BROWSER_TIME_LIMIT_MOCK) as any;
+    browserTimeSecondsLimit = Number(env.BROWSER_TIME_LIMIT_MOCK);
   } else if (limits.browserTimeSecondsLimit !== undefined) {
     browserTimeSecondsLimit = limits.browserTimeSecondsLimit;
   }
@@ -689,27 +706,29 @@ export function getBrowserTimeLimit(env: Env, limits: any): any {
 }
 
 async function buildLimitsResponse(env: Env) {
-  let browserLimits: any = { configured: false };
+  let browserLimits: BrowserLimits = { configured: false };
   if (env.MYBROWSER) {
     try {
-      const limits = await puppeteer.limits(env.MYBROWSER);
-      const browserTimeSecondsLimit = getBrowserTimeLimit(env, limits as any);
+      const limits = await puppeteer.limits(env.MYBROWSER) as ExtendedLimitsResponse;
+      const browserTimeSecondsLimit = getBrowserTimeLimit(env, limits);
 
       browserLimits = {
-        ...(limits as any),
+        ...limits,
         configured: true,
         maxConcurrentSessions: limits.maxConcurrentSessions,
         activeSessionsCount: limits.activeSessions ? limits.activeSessions.length : 0,
         allowedBrowserAcquisitions: limits.allowedBrowserAcquisitions,
         timeUntilNextAcquisition: limits.timeUntilNextAllowedBrowserAcquisition,
-        usedBrowserTimeSeconds: (limits as any).usedBrowserTimeSeconds || 0,
-        timeUntilBrowserTimeReset: (limits as any).timeUntilBrowserTimeReset,
+        usedBrowserTimeSeconds: limits.usedBrowserTimeSeconds || 0,
+        timeUntilBrowserTimeReset: limits.timeUntilBrowserTimeReset,
         browserTimeSecondsLimit,
         browserTimeSecondsIncluded: (limits.maxConcurrentSessions || 1) >= 10 ? 36000 : 600
       };
 
       if (
         browserLimits.browserTimeSecondsLimit !== "unlimited" &&
+        browserLimits.usedBrowserTimeSeconds !== undefined &&
+        browserLimits.browserTimeSecondsLimit !== undefined &&
         browserLimits.usedBrowserTimeSeconds >= browserLimits.browserTimeSecondsLimit &&
         browserLimits.timeUntilBrowserTimeReset === undefined
       ) {
