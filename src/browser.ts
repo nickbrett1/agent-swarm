@@ -97,7 +97,6 @@ if (chromium?.connectOverCDP) {
   const originalConnectOverCDP = chromium.connectOverCDP;
   const patchedConnectOverCDP = async (...args: any[]) => {
     console.log("Patched connectOverCDP invoked");
-    // Playwright's connectOverCDP accepts (endpointURL: string, options?: ConnectOptions) or (options: ConnectOptions)
     if (args.length > 0 && typeof args[0] === 'string') {
       try {
         const urlObj = new URL(args[0]);
