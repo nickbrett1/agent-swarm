@@ -1,6 +1,6 @@
 import { Stagehand } from "@browserbasehq/stagehand";
 import * as playwrightModule from "@cloudflare/playwright";
-import type { BrowserType } from "@cloudflare/playwright";
+import type { BrowserType, Frame } from "@cloudflare/playwright";
 import puppeteer from "@cloudflare/puppeteer";
 import { AgentLLMClient } from "./agentLLMClient.js";
 
@@ -9,7 +9,7 @@ const endpointURLString = playwrightModule.endpointURLString;
 const TRACKER_REGEX = /google-analytics\.com|googletagmanager\.com|doubleclick\.net|facebook\.net|hotjar\.com|mixpanel\.com|segment\.io/;
 
 
-async function fillStripeLocators(frames: any[], card: string, expiry: string, cvc: string, name: string): Promise<{ cardFilled: boolean, expiryFilled: boolean, cvcFilled: boolean, nameFilled: boolean }> {
+async function fillStripeLocators(frames: Frame[], card: string, expiry: string, cvc: string, name: string): Promise<{ cardFilled: boolean, expiryFilled: boolean, cvcFilled: boolean, nameFilled: boolean }> {
   let cardFilled = false;
   let expiryFilled = false;
   let cvcFilled = false;
