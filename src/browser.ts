@@ -521,13 +521,11 @@ export class StagehandBrowserHelper {
     }
   }
 
-  /**
-   * Scrapes the page, extracts interactive elements, and creates an element map.
-   */
-  async getInteractiveElements(): Promise<{ elements: InteractiveElement[]; textSummary: string }> {
-    if (!this.stagehand) throw new Error("Browser not initialized");
-
-    const page = this.getActivePage();
+  private async extractElementsWithRetry(page: playwrightModule.Page): Promise<{
+    success: boolean;
+    data?: ElementData[];
+    fallbackResponse?: { elements: InteractiveElement[]; textSummary: string };
+  }> {
     let elementsData: ElementData[] = [];
     let attempts = 0;
     const maxAttempts = 3;
@@ -535,7 +533,7 @@ export class StagehandBrowserHelper {
     while (attempts < maxAttempts) {
       try {
         elementsData = await page.evaluate(EXTRACT_ELEMENTS_SCRIPT);
-        break; // Success, break out of loop
+        return { success: true, data: elementsData };
       } catch (err) {
         attempts++;
         const message = err instanceof Error ? err.message : String(err);
@@ -572,8 +570,11 @@ export class StagehandBrowserHelper {
                 lowerUrl.includes("order")) {
               console.log("Success/thank-you/order page detected during error. Returning dummy response.");
               return {
-                elements: [],
-                textSummary: `Redirected to success page: ${url}`
+                success: false,
+                fallbackResponse: {
+                  elements: [],
+                  textSummary: `Redirected to success page: ${url}`
+                }
               };
             }
           }
@@ -589,8 +590,11 @@ export class StagehandBrowserHelper {
           if (isDetachedFrameError) {
             console.error(`Persistent detached frame error after ${maxAttempts} attempts. Returning empty elements to allow settle/cooldown.`);
             return {
-              elements: [],
-              textSummary: `Warning: Browser is in a transient detached frame state. Waiting for recovery...`
+              success: false,
+              fallbackResponse: {
+                elements: [],
+                textSummary: `Warning: Browser is in a transient detached frame state. Waiting for recovery...`
+              }
             };
           }
           throw err;
@@ -599,6 +603,22 @@ export class StagehandBrowserHelper {
         await this.wait(2000);
       }
     }
+    return { success: true, data: elementsData };
+  }
+
+  /**
+   * Scrapes the page, extracts interactive elements, and creates an element map.
+   */
+  async getInteractiveElements(): Promise<{ elements: InteractiveElement[]; textSummary: string }> {
+    if (!this.stagehand) throw new Error("Browser not initialized");
+
+    const page = this.getActivePage();
+
+    const result = await this.extractElementsWithRetry(page);
+    if (!result.success && result.fallbackResponse) {
+      return result.fallbackResponse;
+    }
+    const elementsData = result.data || [];
 
     this.elementsMap.clear();
     const elements: InteractiveElement[] = [];
