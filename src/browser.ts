@@ -622,19 +622,21 @@ export class StagehandBrowserHelper {
     this.interactiveElements = elements;
 
     // Generate a clean text summary of the page for the LLM to inspect
-    let textSummary = `Current Page URL: ${page.url()}\nInteractive elements found:\n`;
+    const summaryParts: string[] = [`Current Page URL: ${page.url()}\nInteractive elements found:`];
     if (elements.length === 0) {
-      textSummary += "(No interactive elements found. The page might still be loading or has no clickable items.)\n";
+      summaryParts.push("(No interactive elements found. The page might still be loading or has no clickable items.)");
     } else {
-      textSummary += elements.map((el) => {
-        const labelParts: string[] = [];
-        if (el.text) labelParts.push(`text: "${el.text}"`);
-        if (el.placeholder) labelParts.push(`placeholder/label: "${el.placeholder}"`);
-        if (el.name) labelParts.push(`name: "${el.name}"`);
-        const details = labelParts.length > 0 ? ` (${labelParts.join(", ")})` : "";
-        return `- [${el.id}] <${el.tag}${el.type ? " type=" + el.type : ""}>${details}`;
-      }).join("\n") + "\n";
+      for (let i = 0; i < elements.length; i++) {
+        const el = elements[i];
+        let details = "";
+        if (el.text) details += `text: "${el.text}"`;
+        if (el.placeholder) details += (details ? ", " : "") + `placeholder/label: "${el.placeholder}"`;
+        if (el.name) details += (details ? ", " : "") + `name: "${el.name}"`;
+
+        summaryParts.push(`- [${el.id}] <${el.tag}${el.type ? " type=" + el.type : ""}>${details ? ` (${details})` : ""}`);
+      }
     }
+    const textSummary = summaryParts.join("\n") + "\n";
 
     return { elements, textSummary };
   }
