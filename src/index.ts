@@ -15,6 +15,7 @@ export interface Env {
   STRIPE_TEST_CVC?: string;
   STRIPE_TEST_NAME?: string;
   AGENT_SWARM_SECRET?: string;
+  AGENT_SWARM_SALT?: string;
   BROWSER_TIME_LIMIT_MOCK?: string | number;
 }
 
@@ -600,7 +601,8 @@ ${textSummary}
 export async function verifyHmacSignature(
   expiryStr: string | null,
   signatureHex: string | null,
-  secret: string
+  secret: string,
+  envSalt?: string
 ): Promise<boolean> {
   if (!expiryStr || !signatureHex) return false;
 
@@ -622,8 +624,46 @@ export async function verifyHmacSignature(
       ['deriveKey']
     );
 
-    // Derive a strong 256-bit key for HMAC using PBKDF2
-    const key = await crypto.subtle.deriveKey(
+    // Convert hex signature back to Uint8Array
+    const matches = signatureHex.match(/.{1,2}/g);
+    if (!matches) {
+      return false;
+    }
+    const sigBytes = new Uint8Array(
+      matches.map(byte => parseInt(byte, 16))
+    );
+
+    const dataToVerify = encoder.encode(expiryStr);
+
+    // If an environment salt is provided, try verifying with it first
+    if (envSalt) {
+      const primaryKey = await crypto.subtle.deriveKey(
+        {
+          name: 'PBKDF2',
+          salt: encoder.encode(envSalt),
+          iterations: 600000,
+          hash: 'SHA-256'
+        },
+        keyMaterial,
+        { name: 'HMAC', hash: 'SHA-256', length: 256 },
+        false,
+        ['verify']
+      );
+
+      const isValid = await crypto.subtle.verify(
+        'HMAC',
+        primaryKey,
+        sigBytes,
+        dataToVerify
+      );
+
+      if (isValid) {
+        return true;
+      }
+    }
+
+    // Fallback to the legacy static salt if primary verification fails (or if no envSalt is provided)
+    const fallbackKey = await crypto.subtle.deriveKey(
       {
         name: 'PBKDF2',
         salt: encoder.encode('agent-swarm-salt'),
@@ -636,21 +676,11 @@ export async function verifyHmacSignature(
       ['verify']
     );
 
-    // Convert hex signature back to Uint8Array
-    const matches = signatureHex.match(/.{1,2}/g);
-    if (!matches) {
-      return false;
-    }
-    const sigBytes = new Uint8Array(
-      matches.map(byte => parseInt(byte, 16))
-    );
-
-    // Verify the expiry timestamp matches the signature
     return await crypto.subtle.verify(
       'HMAC',
-      key,
+      fallbackKey,
       sigBytes,
-      encoder.encode(expiryStr)
+      dataToVerify
     );
   } catch (err) {
     console.error("Signature verification error:", err);
@@ -809,9 +839,10 @@ async function handleAgentRequest(request: Request, env: Env, url: URL): Promise
   const signature = url.searchParams.get("signature");
 
   const secret = env.AGENT_SWARM_SECRET;
+  const salt = env.AGENT_SWARM_SALT;
 
   if (secret) {
-    const isAuthorized = await verifyHmacSignature(expiry, signature, secret);
+    const isAuthorized = await verifyHmacSignature(expiry, signature, secret, salt);
     
     if (!isAuthorized) {
       return new Response("Unauthorized Swarm Connection: Invalid or expired signature", {
