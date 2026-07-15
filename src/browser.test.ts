@@ -343,7 +343,6 @@ describe("StagehandBrowserHelper", () => {
     };
     mockPage.locator.mockReturnValueOnce(mockLocator);
 
-    // Direct evaluate mock rejects
     mockPage.evaluate.mockRejectedValueOnce(new Error("Eval fallback failed"));
 
     const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
