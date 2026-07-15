@@ -596,6 +596,8 @@ ${textSummary}
 
 }
 
+const hmacKeyCache = new Map<string, CryptoKey>();
+
 // Helper to verify the SvelteKit HMAC signature
 export async function verifyHmacSignature(
   expiryStr: string | null,
@@ -613,28 +615,33 @@ export async function verifyHmacSignature(
 
     const encoder = new TextEncoder();
 
-    // First import the raw secret as key material for PBKDF2
-    const keyMaterial = await crypto.subtle.importKey(
-      'raw',
-      encoder.encode(secret),
-      { name: 'PBKDF2' },
-      false,
-      ['deriveKey']
-    );
+    let key = hmacKeyCache.get(secret);
+    if (!key) {
+      // First import the raw secret as key material for PBKDF2
+      const keyMaterial = await crypto.subtle.importKey(
+        'raw',
+        encoder.encode(secret),
+        { name: 'PBKDF2' },
+        false,
+        ['deriveKey']
+      );
 
-    // Derive a strong 256-bit key for HMAC using PBKDF2
-    const key = await crypto.subtle.deriveKey(
-      {
-        name: 'PBKDF2',
-        salt: encoder.encode('agent-swarm-salt'),
-        iterations: 600000,
-        hash: 'SHA-256'
-      },
-      keyMaterial,
-      { name: 'HMAC', hash: 'SHA-256', length: 256 },
-      false,
-      ['verify']
-    );
+      // Derive a strong 256-bit key for HMAC using PBKDF2
+      key = await crypto.subtle.deriveKey(
+        {
+          name: 'PBKDF2',
+          salt: encoder.encode('agent-swarm-salt'),
+          iterations: 600000,
+          hash: 'SHA-256'
+        },
+        keyMaterial,
+        { name: 'HMAC', hash: 'SHA-256', length: 256 },
+        false,
+        ['verify']
+      );
+
+      hmacKeyCache.set(secret, key);
+    }
 
     // Convert hex signature back to Uint8Array
     const matches = signatureHex.match(/.{1,2}/g);
