@@ -73,7 +73,7 @@ describe('ShopperAgent isSafeUrl Logic', () => {
 
     mockFetch.mockResolvedValue({
       ok: true,
-      json: async () => ({ Answer: [] })
+      json: async () => ({ Answer: [{ type: 1, data: '93.184.216.34' }] })
     });
   });
 
@@ -708,6 +708,10 @@ describe('ShopperAgent isSafeUrl validation', () => {
 
   beforeEach(() => {
     agent = new (ShopperAgent as any)(null, {});
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ Answer: [{ type: 1, data: '93.184.216.34' }] })
+    });
   });
 
 
