@@ -121,6 +121,31 @@ describe('ShopperAgent isSafeUrl Logic', () => {
     expect(isSafe).toBe(true);
   });
 
+  it('should gracefully handle DNS resolution errors', async () => {
+    const dnsErr = new Error('DNS lookup failed');
+    mockFetch.mockRejectedValue(dnsErr);
+
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const env = {};
+    const agent = new (ShopperAgent as any)(null, env);
+
+    // The agent attempts to resolve both A and AAAA records, logging a warning for each.
+    // If both fail, the fallback behavior is to assume the URL is safe.
+    const isSafe = await agent.isSafeUrl('https://unknown-domain.com/shop');
+
+    expect(isSafe).toBe(true);
+    expect(warnSpy).toHaveBeenCalledWith(
+      "DNS resolution error for unknown-domain.com type A:",
+      dnsErr
+    );
+    expect(warnSpy).toHaveBeenCalledWith(
+      "DNS resolution error for unknown-domain.com type AAAA:",
+      dnsErr
+    );
+
+    warnSpy.mockRestore();
+  });
+
   it('should gracefully handle and catch URL parsing errors', async () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const env = {};
