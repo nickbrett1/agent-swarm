@@ -262,17 +262,15 @@ const EXTRACT_ELEMENTS_SCRIPT = `
     };
   }
 
-  const results = [];
   const selector = 'button, a, input, select, textarea, [role="button"], [onclick]';
   const nodes = document.querySelectorAll(selector);
 
-  nodes.forEach((node) => {
-    const el = node;
-    if (!isVisible(el) || isDisabled(el)) return;
-    results.push(extractElementData(el));
-  });
-
-  return results;
+  return Array.from(nodes)
+    .filter((node) => {
+      const el = node;
+      return isVisible(el) && !isDisabled(el);
+    })
+    .map((node) => extractElementData(node));
 })();
 `;
 
