@@ -29,12 +29,15 @@ export class AgentLLMClient extends LLMClient {
       parts: [{ text: typeof systemMessage.content === "string" ? systemMessage.content : JSON.stringify(systemMessage.content) }]
     } : undefined;
 
-    const contents = options.messages
-      .filter(m => m.role !== "system")
-      .map(m => ({
-        role: m.role === "assistant" ? "model" : m.role,
-        parts: [{ text: typeof m.content === "string" ? m.content : JSON.stringify(m.content) || "" }]
-      }));
+    const contents = options.messages.reduce((acc, m) => {
+      if (m.role !== "system") {
+        acc.push({
+          role: m.role === "assistant" ? "model" : m.role,
+          parts: [{ text: typeof m.content === "string" ? m.content : JSON.stringify(m.content) || "" }]
+        });
+      }
+      return acc;
+    }, [] as any[]);
 
     const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent`;
     const response = await fetch(url, {
