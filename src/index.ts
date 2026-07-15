@@ -389,7 +389,7 @@ export class ShopperAgent extends Agent<Env, ShopperState> {
   /**
    * RPC Endpoint to trigger a shopping run.
    */
-  // @ts-ignore
+  // @ts-expect-error
   @callable()
   async runShopping(persona: string, url?: string): Promise<string> {
     const targetUrl = await this.initializeShoppingSession(persona, url);
