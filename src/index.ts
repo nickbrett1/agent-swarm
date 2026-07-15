@@ -16,6 +16,7 @@ export interface Env {
   STRIPE_TEST_NAME?: string;
   AGENT_SWARM_SECRET?: string;
   BROWSER_TIME_LIMIT_MOCK?: string | number;
+  ALLOWED_ORIGINS?: string;
 }
 
 const PAY_SUBMIT_REGEX = /pay|submit|complete|buy|purchase/i;
@@ -658,19 +659,20 @@ export async function verifyHmacSignature(
   }
 }
 
-const ALLOWED_ORIGINS = new Set(["https://fintechnick.com", "https://localhost:3000"]);
-
-function getCorsOrigin(request: Request): string {
+function getCorsOrigin(request: Request, env: Env): string {
   const origin = request.headers.get("Origin");
-  if (origin && ALLOWED_ORIGINS.has(origin)) {
+  const originsString = env.ALLOWED_ORIGINS || "https://fintechnick.com,https://localhost:3000";
+  const allowedOriginsSet = new Set(originsString.split(",").map(o => o.trim()));
+
+  if (origin && allowedOriginsSet.has(origin)) {
     return origin;
   }
   return "";
 }
 
-function getCorsHeaders(request: Request): Record<string, string> {
+function getCorsHeaders(request: Request, env: Env): Record<string, string> {
   return {
-    "Access-Control-Allow-Origin": getCorsOrigin(request),
+    "Access-Control-Allow-Origin": getCorsOrigin(request, env),
     "Access-Control-Allow-Methods": "GET, OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type"
   };
@@ -740,10 +742,10 @@ async function buildLimitsResponse(env: Env) {
   };
 }
 
-function handleOptions(request: Request): Response {
+function handleOptions(request: Request, env: Env): Response {
   return new Response(null, {
     status: 204,
-    headers: getCorsHeaders(request)
+    headers: getCorsHeaders(request, env)
   });
 }
 
@@ -754,12 +756,12 @@ async function handleLimits(request: Request, env: Env): Promise<Response> {
     status: 200,
     headers: {
       "Content-Type": "application/json",
-      ...getCorsHeaders(request)
+      ...getCorsHeaders(request, env)
     }
   });
 }
 
-export function handleInfo(request: Request): Response {
+export function handleInfo(request: Request, env: Env): Response {
   const info = {
     name: "agent-swarm",
     description: "Autonomous browser rendering swarm that runs stateful agent sessions.",
@@ -799,7 +801,7 @@ export function handleInfo(request: Request): Response {
     status: 200,
     headers: {
       "Content-Type": "application/json",
-      ...getCorsHeaders(request)
+      ...getCorsHeaders(request, env)
     }
   });
 }
@@ -836,7 +838,7 @@ export default {
 
     // 1. Handle CORS preflight requests
     if (request.method === "OPTIONS") {
-      return handleOptions(request);
+      return handleOptions(request, env);
     }
 
     // 2. Serve public API limits/usage data without requiring signatures
@@ -846,7 +848,7 @@ export default {
 
     // 3. Serve public API metadata without requiring signatures
     if (url.pathname === "/info" || url.pathname === "/inspect") {
-      return handleInfo(request);
+      return handleInfo(request, env);
     }
 
     // 4. Verify access signature if secret is configured and route request
