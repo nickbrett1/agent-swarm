@@ -676,12 +676,17 @@ function getCorsHeaders(request: Request): Record<string, string> {
   };
 }
 
-export function getBrowserTimeLimit(env: Env, limits: any): any {
+export interface BrowserLimits {
+  maxConcurrentSessions?: number;
+  browserTimeSecondsLimit?: number;
+}
+
+export function getBrowserTimeLimit(env: Env, limits: BrowserLimits): number | "unlimited" {
   const defaultLimit = (limits.maxConcurrentSessions || 1) >= 10 ? "unlimited" : 600;
-  let browserTimeSecondsLimit = defaultLimit;
+  let browserTimeSecondsLimit: number | "unlimited" = defaultLimit;
 
   if (env.BROWSER_TIME_LIMIT_MOCK !== undefined) {
-    browserTimeSecondsLimit = Number(env.BROWSER_TIME_LIMIT_MOCK) as any;
+    browserTimeSecondsLimit = Number(env.BROWSER_TIME_LIMIT_MOCK);
   } else if (limits.browserTimeSecondsLimit !== undefined) {
     browserTimeSecondsLimit = limits.browserTimeSecondsLimit;
   }
@@ -693,7 +698,7 @@ async function buildLimitsResponse(env: Env) {
   if (env.MYBROWSER) {
     try {
       const limits = await puppeteer.limits(env.MYBROWSER);
-      const browserTimeSecondsLimit = getBrowserTimeLimit(env, limits as any);
+      const browserTimeSecondsLimit = getBrowserTimeLimit(env, limits as unknown as BrowserLimits);
 
       browserLimits = {
         ...(limits as any),
