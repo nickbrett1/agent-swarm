@@ -119,18 +119,28 @@ export class ShopperAgent extends Agent<Env, ShopperState> {
 
       const allRecords = [...aRecords, ...aaaaRecords];
 
-      // If we couldn't resolve any IP, we might consider it safe or unsafe depending on policy.
-      // Let's assume safe to proceed and let the actual connection fail if it's invalid.
-      // But we must check the resolved ones.
+      if (allRecords.length === 0) {
+        console.warn(`DNS resolution for ${hostname} returned no records. Failing closed.`);
+        return false;
+      }
+
+      let hasValidIp = false;
+
       for (const record of allRecords) {
         // A record type is 1, AAAA record type is 28. CNAMEs might also be returned.
         // We just check the data field for any returned IP.
         if (ipaddr.isValid(record.data)) {
           if (this.isPrivateIp(record.data)) {
-            console.warn(`DNS resolution for ${hostname} returned a private IP.`);
+            console.warn(`DNS resolution for ${hostname} returned a private IP: ${record.data}. Failing closed.`);
             return false;
           }
+          hasValidIp = true;
         }
+      }
+
+      if (!hasValidIp) {
+        console.warn(`DNS resolution for ${hostname} returned no valid IP addresses. Failing closed.`);
+        return false;
       }
 
       return true;
