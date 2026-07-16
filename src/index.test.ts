@@ -517,7 +517,7 @@ describe('handleInfo logic', () => {
 describe('verifyHmacSignature', () => {
   const secret = 'test-secret';
 
-  async function generateTestSignature(expiryStr: string, overrideSecret = secret) {
+  async function generateTestSignature(expiryStr: string, overrideSecret = secret, saltStr = 'agent-swarm-salt') {
     const encoder = new TextEncoder();
     const keyMaterial = await crypto.subtle.importKey(
       'raw',
@@ -529,7 +529,7 @@ describe('verifyHmacSignature', () => {
     const key = await crypto.subtle.deriveKey(
       {
         name: 'PBKDF2',
-        salt: encoder.encode('agent-swarm-salt'),
+        salt: encoder.encode(saltStr),
         iterations: 600000,
         hash: 'SHA-256'
       },
@@ -544,7 +544,7 @@ describe('verifyHmacSignature', () => {
       .join('');
   }
 
-  it('should return true for a valid signature and unexpired token', async () => {
+  it('should return true for a valid signature and unexpired token with fallback static salt', async () => {
     const expiry = (Date.now() + 100000).toString();
     const signature = await generateTestSignature(expiry);
     const result = await verifyHmacSignature(expiry, signature, secret);
@@ -585,6 +585,7 @@ describe('verifyHmacSignature', () => {
   });
 
   it('should return false if signature verification throws an error', async () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
     // A malformed signature hex length (e.g. odd number of characters)
     // will cause match(/.{1,2}/g) to potentially return an unexpected result,
     // but a non-hex string with even length will map to NaN when parseInt is called.
@@ -593,6 +594,34 @@ describe('verifyHmacSignature', () => {
     // A 4-byte signature hex (8 characters) instead of the expected 32-byte (64 characters)
     const shortSignature = 'deadbeef';
     expect(await verifyHmacSignature(expiry, shortSignature, secret)).toBe(false);
+    spy.mockRestore();
+  });
+
+  it('should return true for a valid signature signed with a custom environment salt', async () => {
+    const customSalt = 'my-custom-secure-salt';
+    const expiry = (Date.now() + 100000).toString();
+    const signature = await generateTestSignature(expiry, secret, customSalt);
+    const result = await verifyHmacSignature(expiry, signature, secret, customSalt);
+    expect(result).toBe(true);
+  });
+
+  it('should return true falling back to the legacy static salt when verifying a legacy token despite custom salt being present', async () => {
+    const customSalt = 'my-custom-secure-salt';
+    const expiry = (Date.now() + 100000).toString();
+    // Generate signature using legacy static salt
+    const signature = await generateTestSignature(expiry, secret, 'agent-swarm-salt');
+    // Verify using custom environment salt, which should fail and fallback to legacy static salt
+    const result = await verifyHmacSignature(expiry, signature, secret, customSalt);
+    expect(result).toBe(true);
+  });
+
+  it('should return false if signature does not match either the custom or legacy static salt', async () => {
+    const customSalt = 'my-custom-secure-salt';
+    const expiry = (Date.now() + 100000).toString();
+    // Generate signature using a completely different unknown salt
+    const signature = await generateTestSignature(expiry, secret, 'unknown-salt');
+    const result = await verifyHmacSignature(expiry, signature, secret, customSalt);
+    expect(result).toBe(false);
   });
 });
 
