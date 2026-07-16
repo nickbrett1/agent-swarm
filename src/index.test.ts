@@ -498,7 +498,8 @@ describe('handleInfo logic', () => {
     const request = new Request('https://localhost/info', {
       headers: { Origin: 'https://fintechnick.com' }
     });
-    const response = handleInfo(request);
+    const env = {} as any;
+    const response = handleInfo(request, env);
 
     expect(response.status).toBe(200);
     expect(response.headers.get('Content-Type')).toBe('application/json');
