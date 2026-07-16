@@ -130,10 +130,10 @@ describe('ShopperAgent isSafeUrl Logic', () => {
     const agent = new (ShopperAgent as any)(null, env);
 
     // The agent attempts to resolve both A and AAAA records, logging a warning for each.
-    // If both fail, the fallback behavior is to assume the URL is safe.
+    // If both fail, the fallback behavior is to fail closed (unsafe).
     const isSafe = await agent.isSafeUrl('https://unknown-domain.com/shop');
 
-    expect(isSafe).toBe(true);
+    expect(isSafe).toBe(false);
     expect(warnSpy).toHaveBeenCalledWith(
       "DNS resolution error for unknown-domain.com type A:",
       dnsErr
