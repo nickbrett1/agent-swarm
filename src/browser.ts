@@ -451,9 +451,10 @@ export class StagehandBrowserHelper {
         const message = err instanceof Error ? err.message : String(err);
         console.warn(`Evaluation attempt ${attempts} failed:`, message);
         
-        const isClosedError = message.toLowerCase().includes("closed") || 
-                              message.toLowerCase().includes("connection lost") || 
-                              message.toLowerCase().includes("lost");
+        const lowerMessage = message.toLowerCase();
+        const isClosedError = lowerMessage.includes("closed") ||
+                              lowerMessage.includes("connection lost") ||
+                              lowerMessage.includes("lost");
         if (isClosedError) {
           throw err;
         }
@@ -496,9 +497,10 @@ export class StagehandBrowserHelper {
         }
 
         if (attempts >= maxAttempts) {
-          const isDetachedFrameError = message.toLowerCase().includes("detached") || 
-                                       message.toLowerCase().includes("destroyed") || 
-                                       message.toLowerCase().includes("context");
+          const lowerMessage = message.toLowerCase();
+          const isDetachedFrameError = lowerMessage.includes("detached") ||
+                                       lowerMessage.includes("destroyed") ||
+                                       lowerMessage.includes("context");
           if (isDetachedFrameError) {
             console.error(`Persistent detached frame error after ${maxAttempts} attempts. Returning empty elements to allow settle/cooldown.`);
             return {
