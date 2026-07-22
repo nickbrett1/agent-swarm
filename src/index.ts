@@ -405,14 +405,14 @@ export class ShopperAgent extends Agent<Env, ShopperState> {
         status: "completed"
       });
       return `Shopping Session Finished. Status: completed. Summary: ${outcomeSummary}`;
-    } else {
-      this.setState({
-        ...this.state,
-        status: "failed",
-        lastError: errMsg
-      });
-      throw err;
     }
+
+    this.setState({
+      ...this.state,
+      status: "failed",
+      lastError: errMsg
+    });
+    throw err;
   }
 
   /**
