@@ -386,16 +386,17 @@ export class ShopperAgent extends Agent<Env, ShopperState> {
                                errMsg.toLowerCase().includes("detached") ||
                                errMsg.toLowerCase().includes("lost");
 
-    const hasClickedPay = this.state.history.some(log =>
-      log.toLowerCase().includes("action: click") &&
-      (log.toLowerCase().includes("pay") ||
-       log.toLowerCase().includes("submit") ||
-       log.toLowerCase().includes("complete") ||
-       log.toLowerCase().includes("buy") ||
-       log.toLowerCase().includes("button_14") ||
-       log.toLowerCase().includes("button_12") ||
-       log.toLowerCase().includes("button_45"))
-    );
+    const hasClickedPay = this.state.history.some(log => {
+      const lowerLog = log.toLowerCase();
+      return lowerLog.includes("action: click") &&
+        (lowerLog.includes("pay") ||
+         lowerLog.includes("submit") ||
+         lowerLog.includes("complete") ||
+         lowerLog.includes("buy") ||
+         lowerLog.includes("button_14") ||
+         lowerLog.includes("button_12") ||
+         lowerLog.includes("button_45"));
+    });
 
     if (isBrowserClosedErr && hasClickedPay) {
       console.log("Browser disconnected/closed after submitting payment. Marking shopping run as completed successfully.");
