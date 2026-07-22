@@ -685,6 +685,40 @@ describe('Worker Default Export', () => {
     expect(data.secondary_llm.configured).toBe(true);
   });
 
+  it('should return info on /inspect', async () => {
+    const req = new Request('https://localhost/inspect');
+    const env = {};
+    const res = await workerDefault.fetch(req, env as any);
+    expect(res.status).toBe(200);
+    const data = await res.json() as any;
+    expect(data.name).toBe('agent-swarm');
+  });
+
+  it('should return limits on /usage', async () => {
+    const req = new Request('https://localhost/usage');
+    const env = { AI: {}, GOOGLE_API_KEY: 'test-api-key' } as any;
+    const res = await workerDefault.fetch(req, env);
+    expect(res.status).toBe(200);
+    const data = await res.json() as any;
+    expect(data.browser.configured).toBe(false);
+  });
+
+  it('should route unhandled paths to handleAgentRequest and return 200 without secret', async () => {
+    const req = new Request('https://localhost/run');
+    const env = {} as any;
+    const res = await workerDefault.fetch(req, env);
+    expect(res.status).toBe(200);
+    expect(await res.text()).toContain('Cloudflare Agent Swarm is running');
+  });
+
+  it('should route unhandled paths to handleAgentRequest and return 401 with invalid signature when secret is set', async () => {
+    const req = new Request('https://localhost/run');
+    const env = { AGENT_SWARM_SECRET: 'test-secret' } as any;
+    const res = await workerDefault.fetch(req, env);
+    expect(res.status).toBe(401);
+    expect(await res.text()).toContain('Unauthorized Swarm Connection: Invalid or expired signature');
+  });
+
   it('should query browser limits on /limits when MYBROWSER is present', async () => {
     const mockBrowserWorker = {};
     const env = {
