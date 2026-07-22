@@ -582,7 +582,7 @@ ${textSummary}
     });
 
     const aiResponse = response as Record<string, unknown>;
-    console.log("Workers AI Llama raw response type:", typeof response, "keys:", Object.keys(aiResponse), "stringified:", JSON.stringify(aiResponse));
+    console.log("Workers AI Llama raw response type:", typeof response, "keys:", Object.keys(aiResponse));
 
     const rawResponse = aiResponse.response || aiResponse.text;
     if (!rawResponse) {
