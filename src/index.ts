@@ -303,8 +303,14 @@ export class ShopperAgent extends Agent<Env, ShopperState> {
 
   private logDecisionAndHistory(step: number, decision: LLMResponse): void {
     // Filter sensitive data before logging
-    const logDecision = { ...decision };
-    if (logDecision.text) {
+    const logDecision: Partial<LLMResponse> = {
+      explanation: decision.explanation,
+      action: decision.action,
+    };
+    if (decision.targetId !== undefined) {
+      logDecision.targetId = decision.targetId;
+    }
+    if (decision.text !== undefined) {
       logDecision.text = "***REDACTED***";
     }
     console.log(JSON.stringify({ message: "LLM Decision", decision: logDecision }));
