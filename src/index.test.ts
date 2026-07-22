@@ -9,7 +9,7 @@ vi.mock("cloudflare:workers", () => ({
   },
 }));
 
-import workerDefault, { ShopperAgent, verifyHmacSignature, getBrowserTimeLimit, handleInfo } from './index';
+import workerDefault, { ShopperAgent, verifyHmacSignature, getBrowserTimeLimit, handleInfo, buildLimitsResponse } from './index';
 
 vi.mock('@cloudflare/puppeteer', () => ({
   default: {
@@ -919,6 +919,65 @@ describe("ShopperAgent - Full execution flow", () => {
         } catch {}
         expect((agent as any).state.status).toBe("failed");
     });
+});
+
+describe('buildLimitsResponse', () => {
+  let mockEnv: any;
+  let mockLimits: any;
+  let puppeteerMock: any;
+
+  beforeEach(async () => {
+    mockLimits = {
+      activeSessions: [],
+      maxConcurrentSessions: 4,
+      allowedBrowserAcquisitions: 1,
+      timeUntilNextAllowedBrowserAcquisition: 0,
+      usedBrowserTimeSeconds: 0,
+      browserTimeSecondsLimit: 3600,
+    };
+    mockEnv = {
+      MYBROWSER: { fetch: vi.fn() },
+      AI: {},
+      GEMINI_API_KEY: 'test-key',
+    };
+
+    puppeteerMock = await import('@cloudflare/puppeteer').then(m => m.default);
+    (puppeteerMock.limits as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(mockLimits);
+  });
+
+  it('should return configured: false for browser if MYBROWSER is undefined', async () => {
+    const envWithoutBrowser = { AI: {} } as any;
+    const response = await buildLimitsResponse(envWithoutBrowser);
+    expect(response.browser.configured).toBe(false);
+    expect(response.primary_llm.configured).toBe(true);
+    expect(response.secondary_llm.configured).toBe(false);
+  });
+
+  it('should handle successful limits retrieval', async () => {
+    const response = await buildLimitsResponse(mockEnv);
+    expect(response.browser.configured).toBe(true);
+    expect(response.browser.maxConcurrentSessions).toBe(4);
+    expect(response.browser.usedBrowserTimeSeconds).toBe(0);
+    expect(response.browser.browserTimeSecondsIncluded).toBe(600);
+    expect(response.primary_llm.configured).toBe(true);
+    expect(response.secondary_llm.configured).toBe(true);
+  });
+
+  it('should gracefully handle error from puppeteer.limits', async () => {
+    (puppeteerMock.limits as unknown as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('Limits error'));
+    const response = await buildLimitsResponse(mockEnv);
+    expect(response.browser.configured).toBe(true);
+    expect(response.browser.error).toBe('Limits error');
+  });
+
+  it('should calculate timeUntilBrowserTimeReset when used time exceeds limit', async () => {
+    mockLimits.usedBrowserTimeSeconds = 4000;
+    (puppeteerMock.limits as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(mockLimits);
+
+    const response = await buildLimitsResponse(mockEnv);
+    expect(response.browser.timeUntilBrowserTimeReset).toBeGreaterThanOrEqual(0);
+    expect(response.browser.timeUntilBrowserTimeReset).toBeDefined();
+  });
 });
 
 describe('getBrowserTimeLimit', () => {

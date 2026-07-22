@@ -766,7 +766,7 @@ export function getBrowserTimeLimit(env: Env, limits: ExtendedLimitsResponse): n
   return browserTimeSecondsLimit;
 }
 
-async function buildLimitsResponse(env: Env) {
+export async function buildLimitsResponse(env: Env) {
   let browserLimits: BrowserLimits = { configured: false };
   if (env.MYBROWSER) {
     try {
