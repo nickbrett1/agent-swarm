@@ -820,7 +820,7 @@ async function buildLimitsResponse(env: Env) {
   };
 }
 
-function handleOptions(request: Request, env: Env): Response {
+export function handleOptions(request: Request, env: Env): Response {
   return new Response(null, {
     status: 204,
     headers: getCorsHeaders(request, env)
