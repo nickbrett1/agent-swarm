@@ -64,17 +64,8 @@ vi.mock('agents', () => ({
 }));
 
 describe('ShopperAgent isSafeUrl Logic', () => {
-  let mockFetch: any;
-
   beforeEach(() => {
     vi.restoreAllMocks();
-    mockFetch = vi.fn();
-    globalThis.fetch = mockFetch;
-
-    mockFetch.mockResolvedValue({
-      ok: true,
-      json: async () => ({ Answer: [{ type: 1, data: '93.184.216.34' }] })
-    });
   });
 
   it('should allow a regular external domain', async () => {
@@ -102,48 +93,11 @@ describe('ShopperAgent isSafeUrl Logic', () => {
     expect(await agent.isSafeUrl('https://internal-db.internal/')).toBe(false);
   });
 
-  it('should block external domain that resolves to a private IP via DNS', async () => {
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({ Answer: [{ type: 1, data: '127.0.0.1' }] })
-    });
-
-    const env = {};
-    const agent = new (ShopperAgent as any)(null, env);
-    const isSafe = await agent.isSafeUrl('https://localtest.me/admin');
-    expect(isSafe).toBe(false);
-  });
-
   it('should allow external IP addresses directly', async () => {
     const env = {};
     const agent = new (ShopperAgent as any)(null, env);
     const isSafe = await agent.isSafeUrl('https://1.1.1.1/shop');
     expect(isSafe).toBe(true);
-  });
-
-  it('should gracefully handle DNS resolution errors', async () => {
-    const dnsErr = new Error('DNS lookup failed');
-    mockFetch.mockRejectedValue(dnsErr);
-
-    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    const env = {};
-    const agent = new (ShopperAgent as any)(null, env);
-
-    // The agent attempts to resolve both A and AAAA records, logging a warning for each.
-    // If both fail, the fallback behavior is to fail closed (unsafe).
-    const isSafe = await agent.isSafeUrl('https://unknown-domain.com/shop');
-
-    expect(isSafe).toBe(false);
-    expect(warnSpy).toHaveBeenCalledWith(
-      "DNS resolution error for unknown-domain.com type A:",
-      dnsErr
-    );
-    expect(warnSpy).toHaveBeenCalledWith(
-      "DNS resolution error for unknown-domain.com type AAAA:",
-      dnsErr
-    );
-
-    warnSpy.mockRestore();
   });
 
   it('should gracefully handle and catch URL parsing errors', async () => {
@@ -763,10 +717,6 @@ describe('ShopperAgent isSafeUrl validation', () => {
 
   beforeEach(() => {
     agent = new (ShopperAgent as any)(null, {});
-    globalThis.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({ Answer: [{ type: 1, data: '93.184.216.34' }] })
-    });
   });
 
 

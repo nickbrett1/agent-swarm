@@ -115,53 +115,8 @@ export class ShopperAgent extends Agent<Env, ShopperState> {
         return !this.isPrivateIp(hostname);
       }
 
-      // Otherwise, resolve the domain name to A/AAAA records
-      const resolveDns = async (type: string) => {
-        try {
-          const response = await fetch(`https://cloudflare-dns.com/dns-query?name=${hostname}&type=${type}`, {
-            headers: { 'accept': 'application/dns-json' },
-            signal: AbortSignal.timeout(5000)
-          });
-          if (!response.ok) return [];
-          const data = await response.json() as { Answer?: Array<{ type: number, data: string }> };
-          return data.Answer || [];
-        } catch (dnsErr) {
-          console.warn(`DNS resolution error for ${hostname} type ${type}:`, dnsErr);
-          return [];
-        }
-      };
-
-      const [aRecords, aaaaRecords] = await Promise.all([
-        resolveDns('A'),
-        resolveDns('AAAA')
-      ]);
-
-      const allRecords = [...aRecords, ...aaaaRecords];
-
-      if (allRecords.length === 0) {
-        console.warn(`DNS resolution for ${hostname} returned no records. Failing closed.`);
-        return false;
-      }
-
-      let hasValidIp = false;
-
-      for (const record of allRecords) {
-        // A record type is 1, AAAA record type is 28. CNAMEs might also be returned.
-        // We just check the data field for any returned IP.
-        if (ipaddr.isValid(record.data)) {
-          if (this.isPrivateIp(record.data)) {
-            console.warn(`DNS resolution for ${hostname} returned a private IP: ${record.data}. Failing closed.`);
-            return false;
-          }
-          hasValidIp = true;
-        }
-      }
-
-      if (!hasValidIp) {
-        console.warn(`DNS resolution for ${hostname} returned no valid IP addresses. Failing closed.`);
-        return false;
-      }
-
+      // DNS resolution check removed due to DNS rebinding vulnerability.
+      // We rely on Cloudflare's infrastructure/network routing rules to block private IP access.
       return true;
     } catch (urlParseErr) {
       console.warn("Ignored URL parsing error in isSafeUrl:", urlParseErr);
