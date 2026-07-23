@@ -9,7 +9,7 @@ vi.mock("cloudflare:workers", () => ({
   },
 }));
 
-import workerDefault, { ShopperAgent, verifyHmacSignature, getBrowserTimeLimit, handleInfo, getCorsOrigin, getCorsHeaders, buildLimitsResponse } from './index';
+import workerDefault, { ShopperAgent, verifyHmacSignature, getBrowserTimeLimit, handleInfo, getCorsOrigin, getCorsHeaders, handleOptions, buildLimitsResponse } from './index';
 
 vi.mock('@cloudflare/puppeteer', () => ({
   default: {
@@ -1048,6 +1048,36 @@ describe('CORS Helpers', () => {
         'Access-Control-Allow-Headers': 'Content-Type'
       });
     });
+  });
+});
+
+describe('handleOptions', () => {
+  it('should return 204 response with CORS headers for allowed origin', () => {
+    const request = new Request('https://localhost/info', {
+      method: 'OPTIONS',
+      headers: { 'Origin': 'https://fintechnick.com' }
+    });
+    const env = {} as any;
+    const response = handleOptions(request, env);
+
+    expect(response.status).toBe(204);
+    expect(response.headers.get('Access-Control-Allow-Origin')).toBe('https://fintechnick.com');
+    expect(response.headers.get('Access-Control-Allow-Methods')).toBe('GET, OPTIONS');
+    expect(response.headers.get('Access-Control-Allow-Headers')).toBe('Content-Type');
+  });
+
+  it('should return 204 response with empty CORS origin if not allowed', () => {
+    const request = new Request('https://localhost/info', {
+      method: 'OPTIONS',
+      headers: { 'Origin': 'https://evil.com' }
+    });
+    const env = {} as any;
+    const response = handleOptions(request, env);
+
+    expect(response.status).toBe(204);
+    expect(response.headers.get('Access-Control-Allow-Origin')).toBe('');
+    expect(response.headers.get('Access-Control-Allow-Methods')).toBe('GET, OPTIONS');
+    expect(response.headers.get('Access-Control-Allow-Headers')).toBe('Content-Type');
   });
 });
 
