@@ -670,7 +670,7 @@ export async function verifyHmacSignature(
   }
 }
 
-function getCorsOrigin(request: Request, env: Env): string {
+export function getCorsOrigin(request: Request, env: Env): string {
   const origin = request.headers.get("Origin");
   const originsString = env.ALLOWED_ORIGINS || "https://fintechnick.com";
   const allowedOriginsSet = new Set(originsString.split(",").map(o => o.trim()));
@@ -681,7 +681,7 @@ function getCorsOrigin(request: Request, env: Env): string {
   return "";
 }
 
-function getCorsHeaders(request: Request, env: Env): Record<string, string> {
+export function getCorsHeaders(request: Request, env: Env): Record<string, string> {
   return {
     "Access-Control-Allow-Origin": getCorsOrigin(request, env),
     "Access-Control-Allow-Methods": "GET, OPTIONS",

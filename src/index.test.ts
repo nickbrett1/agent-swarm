@@ -9,7 +9,7 @@ vi.mock("cloudflare:workers", () => ({
   },
 }));
 
-import workerDefault, { ShopperAgent, verifyHmacSignature, getBrowserTimeLimit, handleInfo, handleOptions, buildLimitsResponse } from './index';
+import workerDefault, { ShopperAgent, verifyHmacSignature, getBrowserTimeLimit, handleInfo, getCorsOrigin, getCorsHeaders, handleOptions, buildLimitsResponse } from './index';
 
 vi.mock('@cloudflare/puppeteer', () => ({
   default: {
@@ -993,6 +993,62 @@ describe('getBrowserTimeLimit', () => {
         const limits = { maxConcurrentSessions: 2, browserTimeSecondsLimit: 1500 } as any;
         expect(getBrowserTimeLimit(env, limits)).toBe(1800);
     });
+});
+
+describe('CORS Helpers', () => {
+  describe('getCorsOrigin', () => {
+    it('returns the exact origin if it is explicitly in ALLOWED_ORIGINS', () => {
+      const request = new Request('https://example.com', { headers: { Origin: 'https://app.fintechnick.com' } });
+      const env = { ALLOWED_ORIGINS: 'https://app.fintechnick.com, https://localhost:3000' } as any;
+      expect(getCorsOrigin(request, env)).toBe('https://app.fintechnick.com');
+    });
+
+    it('returns the exact origin if it matches the default origins', () => {
+      const request = new Request('https://example.com', { headers: { Origin: 'https://fintechnick.com' } });
+      const env = {} as any; // Empty env to fallback to defaults
+      expect(getCorsOrigin(request, env)).toBe('https://fintechnick.com');
+    });
+
+    it('returns empty string if origin is not allowed', () => {
+      const request = new Request('https://example.com', { headers: { Origin: 'https://malicious.com' } });
+      const env = { ALLOWED_ORIGINS: 'https://app.fintechnick.com' } as any;
+      expect(getCorsOrigin(request, env)).toBe('');
+    });
+
+    it('returns empty string if Origin header is missing', () => {
+      const request = new Request('https://example.com');
+      const env = { ALLOWED_ORIGINS: 'https://app.fintechnick.com' } as any;
+      expect(getCorsOrigin(request, env)).toBe('');
+    });
+  });
+
+  describe('getCorsHeaders', () => {
+    it('returns standard CORS headers with correct allowed origin', () => {
+      const request = new Request('https://example.com', { headers: { Origin: 'https://fintechnick.com' } });
+      const env = {} as any; // Use defaults
+
+      const headers = getCorsHeaders(request, env);
+
+      expect(headers).toEqual({
+        'Access-Control-Allow-Origin': 'https://fintechnick.com',
+        'Access-Control-Allow-Methods': 'GET, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type'
+      });
+    });
+
+    it('returns empty Access-Control-Allow-Origin when origin is disallowed', () => {
+      const request = new Request('https://example.com', { headers: { Origin: 'https://malicious.com' } });
+      const env = {} as any; // Use defaults
+
+      const headers = getCorsHeaders(request, env);
+
+      expect(headers).toEqual({
+        'Access-Control-Allow-Origin': '',
+        'Access-Control-Allow-Methods': 'GET, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type'
+      });
+    });
+  });
 });
 
 describe('handleOptions', () => {
