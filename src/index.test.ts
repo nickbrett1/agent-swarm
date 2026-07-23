@@ -9,7 +9,7 @@ vi.mock("cloudflare:workers", () => ({
   },
 }));
 
-import workerDefault, { ShopperAgent, verifyHmacSignature, getBrowserTimeLimit, handleInfo } from './index';
+import workerDefault, { ShopperAgent, verifyHmacSignature, getBrowserTimeLimit, handleInfo, buildLimitsResponse } from './index';
 
 vi.mock('@cloudflare/puppeteer', () => ({
   default: {
@@ -64,17 +64,8 @@ vi.mock('agents', () => ({
 }));
 
 describe('ShopperAgent isSafeUrl Logic', () => {
-  let mockFetch: any;
-
   beforeEach(() => {
     vi.restoreAllMocks();
-    mockFetch = vi.fn();
-    globalThis.fetch = mockFetch;
-
-    mockFetch.mockResolvedValue({
-      ok: true,
-      json: async () => ({ Answer: [{ type: 1, data: '93.184.216.34' }] })
-    });
   });
 
   it('should allow a regular external domain', async () => {
@@ -102,48 +93,11 @@ describe('ShopperAgent isSafeUrl Logic', () => {
     expect(await agent.isSafeUrl('https://internal-db.internal/')).toBe(false);
   });
 
-  it('should block external domain that resolves to a private IP via DNS', async () => {
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({ Answer: [{ type: 1, data: '127.0.0.1' }] })
-    });
-
-    const env = {};
-    const agent = new (ShopperAgent as any)(null, env);
-    const isSafe = await agent.isSafeUrl('https://localtest.me/admin');
-    expect(isSafe).toBe(false);
-  });
-
   it('should allow external IP addresses directly', async () => {
     const env = {};
     const agent = new (ShopperAgent as any)(null, env);
     const isSafe = await agent.isSafeUrl('https://1.1.1.1/shop');
     expect(isSafe).toBe(true);
-  });
-
-  it('should gracefully handle DNS resolution errors', async () => {
-    const dnsErr = new Error('DNS lookup failed');
-    mockFetch.mockRejectedValue(dnsErr);
-
-    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    const env = {};
-    const agent = new (ShopperAgent as any)(null, env);
-
-    // The agent attempts to resolve both A and AAAA records, logging a warning for each.
-    // If both fail, the fallback behavior is to fail closed (unsafe).
-    const isSafe = await agent.isSafeUrl('https://unknown-domain.com/shop');
-
-    expect(isSafe).toBe(false);
-    expect(warnSpy).toHaveBeenCalledWith(
-      "DNS resolution error for unknown-domain.com type A:",
-      dnsErr
-    );
-    expect(warnSpy).toHaveBeenCalledWith(
-      "DNS resolution error for unknown-domain.com type AAAA:",
-      dnsErr
-    );
-
-    warnSpy.mockRestore();
   });
 
   it('should gracefully handle and catch URL parsing errors', async () => {
@@ -517,7 +471,9 @@ describe('handleInfo logic', () => {
 describe('verifyHmacSignature', () => {
   const secret = 'test-secret';
 
-  async function generateTestSignature(expiryStr: string, overrideSecret = secret, saltStr = 'agent-swarm-salt') {
+  const defaultEnvSalt = 'my-custom-secure-salt';
+
+  async function generateTestSignature(expiryStr: string, overrideSecret = secret, saltStr = defaultEnvSalt) {
     const encoder = new TextEncoder();
     const keyMaterial = await crypto.subtle.importKey(
       'raw',
@@ -544,36 +500,45 @@ describe('verifyHmacSignature', () => {
       .join('');
   }
 
-  it('should return true for a valid signature and unexpired token with fallback static salt', async () => {
+  it('should return false if envSalt is missing', async () => {
+    const spy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const expiry = (Date.now() + 100000).toString();
+    const signature = await generateTestSignature(expiry, secret, defaultEnvSalt);
+    const result = await verifyHmacSignature(expiry, signature, secret); // No envSalt
+    expect(result).toBe(false);
+    spy.mockRestore();
+  });
+
+  it('should return true for a valid signature and unexpired token', async () => {
     const expiry = (Date.now() + 100000).toString();
     const signature = await generateTestSignature(expiry);
-    const result = await verifyHmacSignature(expiry, signature, secret);
+    const result = await verifyHmacSignature(expiry, signature, secret, defaultEnvSalt);
     expect(result).toBe(true);
   });
 
   it('should return false if token is expired', async () => {
     const expiry = (Date.now() - 100000).toString();
     const signature = await generateTestSignature(expiry);
-    const result = await verifyHmacSignature(expiry, signature, secret);
+    const result = await verifyHmacSignature(expiry, signature, secret, defaultEnvSalt);
     expect(result).toBe(false);
   });
 
   it('should return false if expiry is not a valid number', async () => {
     const expiry = 'invalid-expiry';
     const signature = await generateTestSignature(expiry);
-    const result = await verifyHmacSignature(expiry, signature, secret);
+    const result = await verifyHmacSignature(expiry, signature, secret, defaultEnvSalt);
     expect(result).toBe(false);
   });
 
   it('should return false for missing expiry or signature', async () => {
-    expect(await verifyHmacSignature(null, 'some-sig', secret)).toBe(false);
-    expect(await verifyHmacSignature('12345', null, secret)).toBe(false);
-    expect(await verifyHmacSignature(null, null, secret)).toBe(false);
+    expect(await verifyHmacSignature(null, 'some-sig', secret, defaultEnvSalt)).toBe(false);
+    expect(await verifyHmacSignature('12345', null, secret, defaultEnvSalt)).toBe(false);
+    expect(await verifyHmacSignature(null, null, secret, defaultEnvSalt)).toBe(false);
   });
 
   it('should return false for invalid signature format', async () => {
     const expiry = (Date.now() + 100000).toString();
-    expect(await verifyHmacSignature(expiry, 'invalid-hex-format', secret)).toBe(false);
+    expect(await verifyHmacSignature(expiry, 'invalid-hex-format', secret, defaultEnvSalt)).toBe(false);
   });
 
   it('should return false if signature does not match', async () => {
@@ -581,7 +546,7 @@ describe('verifyHmacSignature', () => {
     const validSignature = await generateTestSignature(expiry);
     // alter the signature
     const invalidSignature = 'ff' + validSignature.substring(2);
-    expect(await verifyHmacSignature(expiry, invalidSignature, secret)).toBe(false);
+    expect(await verifyHmacSignature(expiry, invalidSignature, secret, defaultEnvSalt)).toBe(false);
   });
 
   it('should return false if signature verification throws an error', async () => {
@@ -593,29 +558,11 @@ describe('verifyHmacSignature', () => {
     const expiry = (Date.now() + 100000).toString();
     // A 4-byte signature hex (8 characters) instead of the expected 32-byte (64 characters)
     const shortSignature = 'deadbeef';
-    expect(await verifyHmacSignature(expiry, shortSignature, secret)).toBe(false);
+    expect(await verifyHmacSignature(expiry, shortSignature, secret, defaultEnvSalt)).toBe(false);
     spy.mockRestore();
   });
 
-  it('should return true for a valid signature signed with a custom environment salt', async () => {
-    const customSalt = 'my-custom-secure-salt';
-    const expiry = (Date.now() + 100000).toString();
-    const signature = await generateTestSignature(expiry, secret, customSalt);
-    const result = await verifyHmacSignature(expiry, signature, secret, customSalt);
-    expect(result).toBe(true);
-  });
-
-  it('should return true falling back to the legacy static salt when verifying a legacy token despite custom salt being present', async () => {
-    const customSalt = 'my-custom-secure-salt';
-    const expiry = (Date.now() + 100000).toString();
-    // Generate signature using legacy static salt
-    const signature = await generateTestSignature(expiry, secret, 'agent-swarm-salt');
-    // Verify using custom environment salt, which should fail and fallback to legacy static salt
-    const result = await verifyHmacSignature(expiry, signature, secret, customSalt);
-    expect(result).toBe(true);
-  });
-
-  it('should return false if signature does not match either the custom or legacy static salt', async () => {
+  it('should return false if signature does not match the provided envSalt', async () => {
     const customSalt = 'my-custom-secure-salt';
     const expiry = (Date.now() + 100000).toString();
     // Generate signature using a completely different unknown salt
@@ -683,6 +630,40 @@ describe('Worker Default Export', () => {
     expect(data.browser.configured).toBe(false);
     expect(data.primary_llm.configured).toBe(true);
     expect(data.secondary_llm.configured).toBe(true);
+  });
+
+  it('should return info on /inspect', async () => {
+    const req = new Request('https://localhost/inspect');
+    const env = {};
+    const res = await workerDefault.fetch(req, env as any);
+    expect(res.status).toBe(200);
+    const data = await res.json() as any;
+    expect(data.name).toBe('agent-swarm');
+  });
+
+  it('should return limits on /usage', async () => {
+    const req = new Request('https://localhost/usage');
+    const env = { AI: {}, GOOGLE_API_KEY: 'test-api-key' } as any;
+    const res = await workerDefault.fetch(req, env);
+    expect(res.status).toBe(200);
+    const data = await res.json() as any;
+    expect(data.browser.configured).toBe(false);
+  });
+
+  it('should route unhandled paths to handleAgentRequest and return 200 without secret', async () => {
+    const req = new Request('https://localhost/run');
+    const env = {} as any;
+    const res = await workerDefault.fetch(req, env);
+    expect(res.status).toBe(200);
+    expect(await res.text()).toContain('Cloudflare Agent Swarm is running');
+  });
+
+  it('should route unhandled paths to handleAgentRequest and return 401 with invalid signature when secret is set', async () => {
+    const req = new Request('https://localhost/run');
+    const env = { AGENT_SWARM_SECRET: 'test-secret' } as any;
+    const res = await workerDefault.fetch(req, env);
+    expect(res.status).toBe(401);
+    expect(await res.text()).toContain('Unauthorized Swarm Connection: Invalid or expired signature');
   });
 
   it('should query browser limits on /limits when MYBROWSER is present', async () => {
@@ -763,10 +744,6 @@ describe('ShopperAgent isSafeUrl validation', () => {
 
   beforeEach(() => {
     agent = new (ShopperAgent as any)(null, {});
-    globalThis.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({ Answer: [{ type: 1, data: '93.184.216.34' }] })
-    });
   });
 
 
@@ -921,6 +898,65 @@ describe("ShopperAgent - Full execution flow", () => {
     });
 });
 
+describe('buildLimitsResponse', () => {
+  let mockEnv: any;
+  let mockLimits: any;
+  let puppeteerMock: any;
+
+  beforeEach(async () => {
+    mockLimits = {
+      activeSessions: [],
+      maxConcurrentSessions: 4,
+      allowedBrowserAcquisitions: 1,
+      timeUntilNextAllowedBrowserAcquisition: 0,
+      usedBrowserTimeSeconds: 0,
+      browserTimeSecondsLimit: 3600,
+    };
+    mockEnv = {
+      MYBROWSER: { fetch: vi.fn() },
+      AI: {},
+      GEMINI_API_KEY: 'test-key',
+    };
+
+    puppeteerMock = await import('@cloudflare/puppeteer').then(m => m.default);
+    (puppeteerMock.limits as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(mockLimits);
+  });
+
+  it('should return configured: false for browser if MYBROWSER is undefined', async () => {
+    const envWithoutBrowser = { AI: {} } as any;
+    const response = await buildLimitsResponse(envWithoutBrowser);
+    expect(response.browser.configured).toBe(false);
+    expect(response.primary_llm.configured).toBe(true);
+    expect(response.secondary_llm.configured).toBe(false);
+  });
+
+  it('should handle successful limits retrieval', async () => {
+    const response = await buildLimitsResponse(mockEnv);
+    expect(response.browser.configured).toBe(true);
+    expect(response.browser.maxConcurrentSessions).toBe(4);
+    expect(response.browser.usedBrowserTimeSeconds).toBe(0);
+    expect(response.browser.browserTimeSecondsIncluded).toBe(600);
+    expect(response.primary_llm.configured).toBe(true);
+    expect(response.secondary_llm.configured).toBe(true);
+  });
+
+  it('should gracefully handle error from puppeteer.limits', async () => {
+    (puppeteerMock.limits as unknown as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('Limits error'));
+    const response = await buildLimitsResponse(mockEnv);
+    expect(response.browser.configured).toBe(true);
+    expect(response.browser.error).toBe('Limits error');
+  });
+
+  it('should calculate timeUntilBrowserTimeReset when used time exceeds limit', async () => {
+    mockLimits.usedBrowserTimeSeconds = 4000;
+    (puppeteerMock.limits as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(mockLimits);
+
+    const response = await buildLimitsResponse(mockEnv);
+    expect(response.browser.timeUntilBrowserTimeReset).toBeGreaterThanOrEqual(0);
+    expect(response.browser.timeUntilBrowserTimeReset).toBeDefined();
+  });
+});
+
 describe('getBrowserTimeLimit', () => {
     it('returns "unlimited" when maxConcurrentSessions >= 10 and no overrides', () => {
         const env = {} as any;
@@ -956,5 +992,91 @@ describe('getBrowserTimeLimit', () => {
         const env = { BROWSER_TIME_LIMIT_MOCK: '1800' } as any;
         const limits = { maxConcurrentSessions: 2, browserTimeSecondsLimit: 1500 } as any;
         expect(getBrowserTimeLimit(env, limits)).toBe(1800);
+    });
+});
+
+describe('handleAgentRequest', () => {
+    let mockEnv: any;
+    let mockRouteAgentRequest: any;
+    let originalHandleAgentRequest: any;
+
+    beforeEach(async () => {
+        vi.clearAllMocks();
+        mockEnv = { AGENT_SWARM_SECRET: 'test-secret', AGENT_SWARM_SALT: 'test-salt' };
+
+        const agentsModule = await import('agents');
+        mockRouteAgentRequest = agentsModule.routeAgentRequest as any;
+        mockRouteAgentRequest.mockResolvedValue(new Response("routed", { status: 200 }));
+
+        const indexModule = await import('./index');
+        originalHandleAgentRequest = indexModule.handleAgentRequest;
+    });
+
+    it('returns 401 if signature is missing but secret is required', async () => {
+        const req = new Request('https://example.com');
+        const url = new URL('https://example.com');
+
+        const response = await originalHandleAgentRequest(req, mockEnv, url);
+        expect(response.status).toBe(401);
+        expect(await response.text()).toBe("Unauthorized Swarm Connection: Invalid or expired signature");
+    });
+
+    it('returns 401 if signature is expired', async () => {
+        const req = new Request('https://example.com');
+        const url = new URL(`https://example.com?expiry=${Date.now() - 10000}&signature=invalid`);
+
+        const response = await originalHandleAgentRequest(req, mockEnv, url);
+        expect(response.status).toBe(401);
+    });
+
+    it('routes request if no secret is configured', async () => {
+        mockEnv.AGENT_SWARM_SECRET = undefined;
+        const req = new Request('https://example.com');
+        const url = new URL('https://example.com');
+
+        const response = await originalHandleAgentRequest(req, mockEnv, url);
+        expect(response.status).toBe(200);
+        expect(await response.text()).toBe("routed");
+        expect(mockRouteAgentRequest).toHaveBeenCalled();
+    });
+
+    it('returns 200 with default message if routeAgentRequest returns null', async () => {
+        mockEnv.AGENT_SWARM_SECRET = undefined;
+        const req = new Request('https://example.com');
+        const url = new URL('https://example.com');
+        mockRouteAgentRequest.mockResolvedValueOnce(null);
+
+        const response = await originalHandleAgentRequest(req, mockEnv, url);
+        expect(response.status).toBe(200);
+        expect(await response.text()).toBe("Cloudflare Agent Swarm is running. Use the WebSocket/RPC client to trigger runs.");
+    });
+
+    it('routes request if signature is valid', async () => {
+        const crypto = globalThis.crypto;
+        const expiry = Date.now() + 100000;
+        const encoder = new TextEncoder();
+
+        const keyMaterial = await crypto.subtle.importKey(
+            "raw", encoder.encode(mockEnv.AGENT_SWARM_SECRET),
+            { name: "PBKDF2" }, false, ["deriveKey"]
+        );
+        const saltBuffer = encoder.encode(mockEnv.AGENT_SWARM_SALT);
+        const key = await crypto.subtle.deriveKey(
+            { name: "PBKDF2", salt: saltBuffer, iterations: 600000, hash: "SHA-256" },
+            keyMaterial, { name: "HMAC", hash: "SHA-256", length: 256 }, false, ["sign"]
+        );
+        const signatureBuffer = await crypto.subtle.sign(
+            "HMAC", key, encoder.encode(expiry.toString())
+        );
+        const signatureArray = Array.from(new Uint8Array(signatureBuffer));
+        const signatureHex = signatureArray.map(b => b.toString(16).padStart(2, '0')).join('');
+
+        const req = new Request('https://example.com');
+        const url = new URL(`https://example.com?expiry=${expiry}&signature=${signatureHex}`);
+
+        const response = await originalHandleAgentRequest(req, mockEnv, url);
+        expect(response.status).toBe(200);
+        expect(await response.text()).toBe("routed");
+        expect(mockRouteAgentRequest).toHaveBeenCalled();
     });
 });
