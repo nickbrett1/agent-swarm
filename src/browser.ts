@@ -10,6 +10,9 @@ const endpointURLString = playwrightModule.endpointURLString;
 const TRACKER_REGEX = /google-analytics\.com|googletagmanager\.com|doubleclick\.net|facebook\.net|hotjar\.com|mixpanel\.com|segment\.io/;
 const SUCCESS_PAGE_REGEX = /success|thank|complete|confirm|receipt|order/i;
 
+const CLOSED_ERROR_REGEX = /closed|connection lost|lost/i;
+const DETACHED_FRAME_ERROR_REGEX = /detached|destroyed|context/i;
+
 
 async function fillStripeLocators(frames: Frame[], card: string, expiry: string, cvc: string, name: string): Promise<{ cardFilled: boolean, expiryFilled: boolean, cvcFilled: boolean, nameFilled: boolean }> {
   let cardFilled = false;
@@ -436,10 +439,7 @@ export class StagehandBrowserHelper {
         const message = err instanceof Error ? err.message : String(err);
         console.warn(`Evaluation attempt ${attempts} failed:`, message);
         
-        const lowerMessage = message.toLowerCase();
-        const isClosedError = lowerMessage.includes("closed") ||
-                              lowerMessage.includes("connection lost") ||
-                              lowerMessage.includes("lost");
+        const isClosedError = CLOSED_ERROR_REGEX.test(message);
         if (isClosedError) {
           throw err;
         }
@@ -474,10 +474,7 @@ export class StagehandBrowserHelper {
         }
 
         if (attempts >= maxAttempts) {
-          const lowerMessage = message.toLowerCase();
-          const isDetachedFrameError = lowerMessage.includes("detached") ||
-                                       lowerMessage.includes("destroyed") ||
-                                       lowerMessage.includes("context");
+          const isDetachedFrameError = DETACHED_FRAME_ERROR_REGEX.test(message);
           if (isDetachedFrameError) {
             console.error(`Persistent detached frame error after ${maxAttempts} attempts. Returning empty elements to allow settle/cooldown.`);
             return {
