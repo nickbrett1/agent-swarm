@@ -21,43 +21,30 @@ async function fillStripeLocators(frames: Frame[], card: string, expiry: string,
   const cvcSelector = STRIPE_CVC_SELECTORS.join(',');
   const nameSelector = STRIPE_NAME_SELECTORS.join(',');
 
-  await Promise.all(frames.map(async (frame) => {
+  const fillLocatorIfUnfilled = async (frame: Frame, selector: string, value: string, isFilled: boolean): Promise<boolean> => {
+    if (isFilled) return true;
+    const loc = frame.locator(selector);
+    if (await loc.count() > 0) {
+      await loc.first().fill(value);
+      return true;
+    }
+    return false;
+  };
+
+  for (const frame of frames) {
     try {
-      if (!cardFilled) {
-        const cardLoc = frame.locator(cardSelector);
-        if (await cardLoc.count() > 0) {
-          await cardLoc.first().fill(card);
-          cardFilled = true;
-        }
-      }
+      cardFilled = await fillLocatorIfUnfilled(frame, cardSelector, card, cardFilled);
+      expiryFilled = await fillLocatorIfUnfilled(frame, expirySelector, expiry, expiryFilled);
+      cvcFilled = await fillLocatorIfUnfilled(frame, cvcSelector, cvc, cvcFilled);
+      nameFilled = await fillLocatorIfUnfilled(frame, nameSelector, name, nameFilled);
 
-      if (!expiryFilled) {
-        const expiryLoc = frame.locator(expirySelector);
-        if (await expiryLoc.count() > 0) {
-          await expiryLoc.first().fill(expiry);
-          expiryFilled = true;
-        }
-      }
-
-      if (!cvcFilled) {
-        const cvcLoc = frame.locator(cvcSelector);
-        if (await cvcLoc.count() > 0) {
-          await cvcLoc.first().fill(cvc);
-          cvcFilled = true;
-        }
-      }
-
-      if (!nameFilled) {
-        const nameLoc = frame.locator(nameSelector);
-        if (await nameLoc.count() > 0) {
-          await nameLoc.first().fill(name);
-          nameFilled = true;
-        }
+      if (cardFilled && expiryFilled && cvcFilled && nameFilled) {
+        break;
       }
     } catch (frameErr) {
       console.warn("Ignored frame specific error while filling Stripe:", frameErr);
     }
-  }));
+  }
 
   return { cardFilled, expiryFilled, cvcFilled, nameFilled };
 }
