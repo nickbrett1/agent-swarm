@@ -8,6 +8,7 @@ import { EXTRACT_ELEMENTS_SCRIPT } from "./scripts/extract-elements.js";
 const endpointURLString = playwrightModule.endpointURLString;
 
 const TRACKER_REGEX = /google-analytics\.com|googletagmanager\.com|doubleclick\.net|facebook\.net|hotjar\.com|mixpanel\.com|segment\.io/;
+const SUCCESS_PAGE_REGEX = /success|thank|complete|confirm|receipt|order/i;
 
 
 async function fillStripeLocators(frames: Frame[], card: string, expiry: string, cvc: string, name: string): Promise<{ cardFilled: boolean, expiryFilled: boolean, cvcFilled: boolean, nameFilled: boolean }> {
@@ -457,23 +458,15 @@ export class StagehandBrowserHelper {
 
         try {
           const url = await this.getPageUrl();
-          if (url) {
-            const lowerUrl = url.toLowerCase();
-            if (lowerUrl.includes("success") ||
-                lowerUrl.includes("thank") ||
-                lowerUrl.includes("complete") ||
-                lowerUrl.includes("confirm") ||
-                lowerUrl.includes("receipt") ||
-                lowerUrl.includes("order")) {
-              console.log("Success/thank-you/order page detected during error. Returning dummy response.");
-              return {
-                success: false,
-                fallbackResponse: {
-                  elements: [],
-                  textSummary: `Redirected to success page: ${url}`
-                }
-              };
-            }
+          if (url && SUCCESS_PAGE_REGEX.test(url)) {
+            console.log("Success/thank-you/order page detected during error. Returning dummy response.");
+            return {
+              success: false,
+              fallbackResponse: {
+                elements: [],
+                textSummary: `Redirected to success page: ${url}`
+              }
+            };
           }
         } catch (urlErr) {
           const urlErrMsg = urlErr instanceof Error ? urlErr.message : String(urlErr);
