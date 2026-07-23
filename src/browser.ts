@@ -8,6 +8,7 @@ import { EXTRACT_ELEMENTS_SCRIPT } from "./scripts/extract-elements.js";
 const endpointURLString = playwrightModule.endpointURLString;
 
 const TRACKER_REGEX = /google-analytics\.com|googletagmanager\.com|doubleclick\.net|facebook\.net|hotjar\.com|mixpanel\.com|segment\.io/;
+const SUCCESS_PAGE_REGEX = /success|thank|complete|confirm|receipt|order/i;
 
 const CLOSED_ERROR_REGEX = /closed|connection lost|lost/i;
 const DETACHED_FRAME_ERROR_REGEX = /detached|destroyed|context/i;
@@ -24,43 +25,30 @@ async function fillStripeLocators(frames: Frame[], card: string, expiry: string,
   const cvcSelector = STRIPE_CVC_SELECTORS.join(',');
   const nameSelector = STRIPE_NAME_SELECTORS.join(',');
 
-  await Promise.all(frames.map(async (frame) => {
+  const fillLocatorIfUnfilled = async (frame: Frame, selector: string, value: string, isFilled: boolean): Promise<boolean> => {
+    if (isFilled) return true;
+    const loc = frame.locator(selector);
+    if (await loc.count() > 0) {
+      await loc.first().fill(value);
+      return true;
+    }
+    return false;
+  };
+
+  for (const frame of frames) {
     try {
-      if (!cardFilled) {
-        const cardLoc = frame.locator(cardSelector);
-        if (await cardLoc.count() > 0) {
-          await cardLoc.first().fill(card);
-          cardFilled = true;
-        }
-      }
+      cardFilled = await fillLocatorIfUnfilled(frame, cardSelector, card, cardFilled);
+      expiryFilled = await fillLocatorIfUnfilled(frame, expirySelector, expiry, expiryFilled);
+      cvcFilled = await fillLocatorIfUnfilled(frame, cvcSelector, cvc, cvcFilled);
+      nameFilled = await fillLocatorIfUnfilled(frame, nameSelector, name, nameFilled);
 
-      if (!expiryFilled) {
-        const expiryLoc = frame.locator(expirySelector);
-        if (await expiryLoc.count() > 0) {
-          await expiryLoc.first().fill(expiry);
-          expiryFilled = true;
-        }
-      }
-
-      if (!cvcFilled) {
-        const cvcLoc = frame.locator(cvcSelector);
-        if (await cvcLoc.count() > 0) {
-          await cvcLoc.first().fill(cvc);
-          cvcFilled = true;
-        }
-      }
-
-      if (!nameFilled) {
-        const nameLoc = frame.locator(nameSelector);
-        if (await nameLoc.count() > 0) {
-          await nameLoc.first().fill(name);
-          nameFilled = true;
-        }
+      if (cardFilled && expiryFilled && cvcFilled && nameFilled) {
+        break;
       }
     } catch (frameErr) {
       console.warn("Ignored frame specific error while filling Stripe:", frameErr);
     }
-  }));
+  }
 
   return { cardFilled, expiryFilled, cvcFilled, nameFilled };
 }
@@ -73,9 +61,6 @@ function findNewestPage(context: any, currentPage: any): any {
   for (let i = pages.length - 1; i >= 0; i--) {
     const p = pages[i];
     if (p) {
-      if (p !== currentPage) {
-        console.log(`[StagehandBrowserHelper] Switching active page to newer tab: ${p.url()}`);
-      }
       return p;
     }
   }
@@ -473,23 +458,15 @@ export class StagehandBrowserHelper {
 
         try {
           const url = await this.getPageUrl();
-          if (url) {
-            const lowerUrl = url.toLowerCase();
-            if (lowerUrl.includes("success") ||
-                lowerUrl.includes("thank") ||
-                lowerUrl.includes("complete") ||
-                lowerUrl.includes("confirm") ||
-                lowerUrl.includes("receipt") ||
-                lowerUrl.includes("order")) {
-              console.log("Success/thank-you/order page detected during error. Returning dummy response.");
-              return {
-                success: false,
-                fallbackResponse: {
-                  elements: [],
-                  textSummary: `Redirected to success page: ${url}`
-                }
-              };
-            }
+          if (url && SUCCESS_PAGE_REGEX.test(url)) {
+            console.log("Success/thank-you/order page detected during error. Returning dummy response.");
+            return {
+              success: false,
+              fallbackResponse: {
+                elements: [],
+                textSummary: `Redirected to success page: ${url}`
+              }
+            };
           }
         } catch (urlErr) {
           const urlErrMsg = urlErr instanceof Error ? urlErr.message : String(urlErr);
