@@ -57,9 +57,6 @@ function findNewestPage(context: any, currentPage: any): any {
   for (let i = pages.length - 1; i >= 0; i--) {
     const p = pages[i];
     if (p) {
-      if (p !== currentPage) {
-        console.log(`[StagehandBrowserHelper] Switching active page to newer tab: ${p.url()}`);
-      }
       return p;
     }
   }
