@@ -583,6 +583,32 @@ ${textSummary}
 
 const hmacKeyCache = new Map<string, CryptoKey>();
 
+async function getOrCreateHmacKey(
+  secret: string,
+  salt: string,
+  encoder: TextEncoder,
+  getKeyMaterial: () => Promise<CryptoKey>
+): Promise<CryptoKey> {
+  const cacheKey = salt + ":" + secret;
+  let key = hmacKeyCache.get(cacheKey);
+  if (!key) {
+    key = await crypto.subtle.deriveKey(
+      {
+        name: 'PBKDF2',
+        salt: encoder.encode(salt),
+        iterations: 600000,
+        hash: 'SHA-256'
+      },
+      await getKeyMaterial(),
+      { name: 'HMAC', hash: 'SHA-256', length: 256 },
+      false,
+      ['verify']
+    );
+    hmacKeyCache.set(cacheKey, key);
+  }
+  return key;
+}
+
 // Helper to verify the SvelteKit HMAC signature
 export async function verifyHmacSignature(
   expiryStr: string | null,
@@ -616,31 +642,21 @@ export async function verifyHmacSignature(
       return false;
     }
 
-    const cacheKey = envSalt + ":" + secret;
-    let primaryKey = hmacKeyCache.get(cacheKey);
-    if (!primaryKey) {
-      const keyMaterial = await crypto.subtle.importKey(
-        'raw',
-        encoder.encode(secret),
-        { name: 'PBKDF2' },
-        false,
-        ['deriveKey']
-      );
+    let baseKeyMaterial: CryptoKey | undefined;
+    const getBaseKeyMaterial = async () => {
+      if (!baseKeyMaterial) {
+        baseKeyMaterial = await crypto.subtle.importKey(
+          'raw',
+          encoder.encode(secret),
+          { name: 'PBKDF2' },
+          false,
+          ['deriveKey']
+        );
+      }
+      return baseKeyMaterial;
+    };
 
-      primaryKey = await crypto.subtle.deriveKey(
-        {
-          name: 'PBKDF2',
-          salt: encoder.encode(envSalt),
-          iterations: 600000,
-          hash: 'SHA-256'
-        },
-        keyMaterial,
-        { name: 'HMAC', hash: 'SHA-256', length: 256 },
-        false,
-        ['verify']
-      );
-      hmacKeyCache.set(cacheKey, primaryKey);
-    }
+    const primaryKey = await getOrCreateHmacKey(secret, envSalt, encoder, getBaseKeyMaterial);
 
     return await crypto.subtle.verify(
       'HMAC',
