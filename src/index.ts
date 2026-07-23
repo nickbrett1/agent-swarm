@@ -115,53 +115,8 @@ export class ShopperAgent extends Agent<Env, ShopperState> {
         return !this.isPrivateIp(hostname);
       }
 
-      // Otherwise, resolve the domain name to A/AAAA records
-      const resolveDns = async (type: string) => {
-        try {
-          const response = await fetch(`https://cloudflare-dns.com/dns-query?name=${hostname}&type=${type}`, {
-            headers: { 'accept': 'application/dns-json' },
-            signal: AbortSignal.timeout(5000)
-          });
-          if (!response.ok) return [];
-          const data = await response.json() as { Answer?: Array<{ type: number, data: string }> };
-          return data.Answer || [];
-        } catch (dnsErr) {
-          console.warn(`DNS resolution error for ${hostname} type ${type}:`, dnsErr);
-          return [];
-        }
-      };
-
-      const [aRecords, aaaaRecords] = await Promise.all([
-        resolveDns('A'),
-        resolveDns('AAAA')
-      ]);
-
-      const allRecords = [...aRecords, ...aaaaRecords];
-
-      if (allRecords.length === 0) {
-        console.warn(`DNS resolution for ${hostname} returned no records. Failing closed.`);
-        return false;
-      }
-
-      let hasValidIp = false;
-
-      for (const record of allRecords) {
-        // A record type is 1, AAAA record type is 28. CNAMEs might also be returned.
-        // We just check the data field for any returned IP.
-        if (ipaddr.isValid(record.data)) {
-          if (this.isPrivateIp(record.data)) {
-            console.warn(`DNS resolution for ${hostname} returned a private IP: ${record.data}. Failing closed.`);
-            return false;
-          }
-          hasValidIp = true;
-        }
-      }
-
-      if (!hasValidIp) {
-        console.warn(`DNS resolution for ${hostname} returned no valid IP addresses. Failing closed.`);
-        return false;
-      }
-
+      // DNS resolution check removed due to DNS rebinding vulnerability.
+      // We rely on Cloudflare's infrastructure/network routing rules to block private IP access.
       return true;
     } catch (urlParseErr) {
       console.warn("Ignored URL parsing error in isSafeUrl:", urlParseErr);
@@ -170,16 +125,9 @@ export class ShopperAgent extends Agent<Env, ShopperState> {
   }
 
   private async waitForUrlChange(helper: StagehandBrowserHelper, startUrl: string): Promise<void> {
-    console.log(JSON.stringify({ message: "Pay/Submit/Buy button clicked, waiting for navigation/redirect to settle..." }));
-
     const urlChanged = await helper.waitForUrlChange(startUrl, 12000);
 
-    if (urlChanged) {
-      const currentUrl = await helper.getPageUrl();
-      console.log(JSON.stringify({ message: `URL changed from ${startUrl} to ${currentUrl}.` }));
-      // We no longer need the fixed 2.5s wait since waitUntil: "load" ensures the page is ready.
-    } else {
-      console.log(JSON.stringify({ message: "URL did not change after click within timeout. Cooldown 2s." }));
+    if (!urlChanged) {
       await helper.wait(2000);
     }
   }
@@ -302,9 +250,15 @@ export class ShopperAgent extends Agent<Env, ShopperState> {
   }
 
   private logDecisionAndHistory(step: number, decision: LLMResponse): void {
-    // Filter sensitive data before logging
-    const logDecision = { ...decision };
-    if (logDecision.text) {
+    // Filter sensitive data before logging by only including safe fields
+    const logDecision: Record<string, string> = {
+      explanation: decision.explanation,
+      action: decision.action
+    };
+    if (decision.targetId) {
+      logDecision.targetId = decision.targetId;
+    }
+    if (decision.text) {
       logDecision.text = "***REDACTED***";
     }
     console.log(JSON.stringify({ message: "LLM Decision", decision: logDecision }));
@@ -381,21 +335,23 @@ export class ShopperAgent extends Agent<Env, ShopperState> {
     console.error("Error during shopping execution:", err);
 
     const errMsg = err instanceof Error ? err.message : String(err);
-    const isBrowserClosedErr = errMsg.toLowerCase().includes("closed") ||
-                               errMsg.toLowerCase().includes("connection lost") ||
-                               errMsg.toLowerCase().includes("detached") ||
-                               errMsg.toLowerCase().includes("lost");
+    const lowerErrMsg = errMsg.toLowerCase();
+    const isBrowserClosedErr = lowerErrMsg.includes("closed") ||
+                               lowerErrMsg.includes("connection lost") ||
+                               lowerErrMsg.includes("detached") ||
+                               lowerErrMsg.includes("lost");
 
-    const hasClickedPay = this.state.history.some(log =>
-      log.toLowerCase().includes("action: click") &&
-      (log.toLowerCase().includes("pay") ||
-       log.toLowerCase().includes("submit") ||
-       log.toLowerCase().includes("complete") ||
-       log.toLowerCase().includes("buy") ||
-       log.toLowerCase().includes("button_14") ||
-       log.toLowerCase().includes("button_12") ||
-       log.toLowerCase().includes("button_45"))
-    );
+    const hasClickedPay = this.state.history.some(log => {
+      const lowerLog = log.toLowerCase();
+      return lowerLog.includes("action: click") &&
+        (lowerLog.includes("pay") ||
+         lowerLog.includes("submit") ||
+         lowerLog.includes("complete") ||
+         lowerLog.includes("buy") ||
+         lowerLog.includes("button_14") ||
+         lowerLog.includes("button_12") ||
+         lowerLog.includes("button_45"));
+    });
 
     if (isBrowserClosedErr && hasClickedPay) {
       console.log("Browser disconnected/closed after submitting payment. Marking shopping run as completed successfully.");
@@ -405,14 +361,14 @@ export class ShopperAgent extends Agent<Env, ShopperState> {
         status: "completed"
       });
       return `Shopping Session Finished. Status: completed. Summary: ${outcomeSummary}`;
-    } else {
-      this.setState({
-        ...this.state,
-        status: "failed",
-        lastError: errMsg
-      });
-      throw err;
     }
+
+    this.setState({
+      ...this.state,
+      status: "failed",
+      lastError: errMsg
+    });
+    throw err;
   }
 
   /**
@@ -582,7 +538,7 @@ ${textSummary}
     });
 
     const aiResponse = response as Record<string, unknown>;
-    console.log("Workers AI Llama raw response type:", typeof response, "keys:", Object.keys(aiResponse), "stringified:", JSON.stringify(aiResponse));
+    console.log("Workers AI Llama raw response type:", typeof response, "keys:", Object.keys(aiResponse));
 
     const rawResponse = aiResponse.response || aiResponse.text;
     if (!rawResponse) {
@@ -655,51 +611,14 @@ export async function verifyHmacSignature(
 
     const dataToVerify = encoder.encode(expiryStr);
 
-    // If an environment salt is provided, try verifying with it first
-    if (envSalt) {
-      const cacheKey = envSalt + ":" + secret;
-      let primaryKey = hmacKeyCache.get(cacheKey);
-      if (!primaryKey) {
-        const keyMaterial = await crypto.subtle.importKey(
-          'raw',
-          encoder.encode(secret),
-          { name: 'PBKDF2' },
-          false,
-          ['deriveKey']
-        );
-
-        primaryKey = await crypto.subtle.deriveKey(
-          {
-            name: 'PBKDF2',
-            salt: encoder.encode(envSalt),
-            iterations: 600000,
-            hash: 'SHA-256'
-          },
-          keyMaterial,
-          { name: 'HMAC', hash: 'SHA-256', length: 256 },
-          false,
-          ['verify']
-        );
-        hmacKeyCache.set(cacheKey, primaryKey);
-      }
-
-      const isValid = await crypto.subtle.verify(
-        'HMAC',
-        primaryKey,
-        sigBytes,
-        dataToVerify
-      );
-
-      if (isValid) {
-        return true;
-      }
+    if (!envSalt) {
+      console.warn("Missing required environment salt for HMAC verification.");
+      return false;
     }
 
-    // Fallback to the legacy static salt if primary verification fails (or if no envSalt is provided)
-    const legacySalt = 'agent-swarm-salt';
-    const legacyCacheKey = legacySalt + ":" + secret;
-    let fallbackKey = hmacKeyCache.get(legacyCacheKey);
-    if (!fallbackKey) {
+    const cacheKey = envSalt + ":" + secret;
+    let primaryKey = hmacKeyCache.get(cacheKey);
+    if (!primaryKey) {
       const keyMaterial = await crypto.subtle.importKey(
         'raw',
         encoder.encode(secret),
@@ -708,10 +627,10 @@ export async function verifyHmacSignature(
         ['deriveKey']
       );
 
-      fallbackKey = await crypto.subtle.deriveKey(
+      primaryKey = await crypto.subtle.deriveKey(
         {
           name: 'PBKDF2',
-          salt: encoder.encode(legacySalt),
+          salt: encoder.encode(envSalt),
           iterations: 600000,
           hash: 'SHA-256'
         },
@@ -720,12 +639,12 @@ export async function verifyHmacSignature(
         false,
         ['verify']
       );
-      hmacKeyCache.set(legacyCacheKey, fallbackKey);
+      hmacKeyCache.set(cacheKey, primaryKey);
     }
 
     return await crypto.subtle.verify(
       'HMAC',
-      fallbackKey,
+      primaryKey,
       sigBytes,
       dataToVerify
     );
@@ -737,7 +656,7 @@ export async function verifyHmacSignature(
 
 function getCorsOrigin(request: Request, env: Env): string {
   const origin = request.headers.get("Origin");
-  const originsString = env.ALLOWED_ORIGINS || "https://fintechnick.com,https://localhost:3000";
+  const originsString = env.ALLOWED_ORIGINS || "https://fintechnick.com";
   const allowedOriginsSet = new Set(originsString.split(",").map(o => o.trim()));
 
   if (origin && allowedOriginsSet.has(origin)) {
@@ -766,7 +685,7 @@ export function getBrowserTimeLimit(env: Env, limits: ExtendedLimitsResponse): n
   return browserTimeSecondsLimit;
 }
 
-async function buildLimitsResponse(env: Env) {
+export async function buildLimitsResponse(env: Env) {
   let browserLimits: BrowserLimits = { configured: false };
   if (env.MYBROWSER) {
     try {
@@ -884,7 +803,7 @@ export function handleInfo(request: Request, env: Env): Response {
   });
 }
 
-async function handleAgentRequest(request: Request, env: Env, url: URL): Promise<Response> {
+export async function handleAgentRequest(request: Request, env: Env, url: URL): Promise<Response> {
   const expiry = url.searchParams.get("expiry");
   const signature = url.searchParams.get("signature");
 
