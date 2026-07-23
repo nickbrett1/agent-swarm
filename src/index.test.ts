@@ -471,7 +471,9 @@ describe('handleInfo logic', () => {
 describe('verifyHmacSignature', () => {
   const secret = 'test-secret';
 
-  async function generateTestSignature(expiryStr: string, overrideSecret = secret, saltStr = 'agent-swarm-salt') {
+  const defaultEnvSalt = 'my-custom-secure-salt';
+
+  async function generateTestSignature(expiryStr: string, overrideSecret = secret, saltStr = defaultEnvSalt) {
     const encoder = new TextEncoder();
     const keyMaterial = await crypto.subtle.importKey(
       'raw',
@@ -498,36 +500,45 @@ describe('verifyHmacSignature', () => {
       .join('');
   }
 
-  it('should return true for a valid signature and unexpired token with fallback static salt', async () => {
+  it('should return false if envSalt is missing', async () => {
+    const spy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const expiry = (Date.now() + 100000).toString();
+    const signature = await generateTestSignature(expiry, secret, defaultEnvSalt);
+    const result = await verifyHmacSignature(expiry, signature, secret); // No envSalt
+    expect(result).toBe(false);
+    spy.mockRestore();
+  });
+
+  it('should return true for a valid signature and unexpired token', async () => {
     const expiry = (Date.now() + 100000).toString();
     const signature = await generateTestSignature(expiry);
-    const result = await verifyHmacSignature(expiry, signature, secret);
+    const result = await verifyHmacSignature(expiry, signature, secret, defaultEnvSalt);
     expect(result).toBe(true);
   });
 
   it('should return false if token is expired', async () => {
     const expiry = (Date.now() - 100000).toString();
     const signature = await generateTestSignature(expiry);
-    const result = await verifyHmacSignature(expiry, signature, secret);
+    const result = await verifyHmacSignature(expiry, signature, secret, defaultEnvSalt);
     expect(result).toBe(false);
   });
 
   it('should return false if expiry is not a valid number', async () => {
     const expiry = 'invalid-expiry';
     const signature = await generateTestSignature(expiry);
-    const result = await verifyHmacSignature(expiry, signature, secret);
+    const result = await verifyHmacSignature(expiry, signature, secret, defaultEnvSalt);
     expect(result).toBe(false);
   });
 
   it('should return false for missing expiry or signature', async () => {
-    expect(await verifyHmacSignature(null, 'some-sig', secret)).toBe(false);
-    expect(await verifyHmacSignature('12345', null, secret)).toBe(false);
-    expect(await verifyHmacSignature(null, null, secret)).toBe(false);
+    expect(await verifyHmacSignature(null, 'some-sig', secret, defaultEnvSalt)).toBe(false);
+    expect(await verifyHmacSignature('12345', null, secret, defaultEnvSalt)).toBe(false);
+    expect(await verifyHmacSignature(null, null, secret, defaultEnvSalt)).toBe(false);
   });
 
   it('should return false for invalid signature format', async () => {
     const expiry = (Date.now() + 100000).toString();
-    expect(await verifyHmacSignature(expiry, 'invalid-hex-format', secret)).toBe(false);
+    expect(await verifyHmacSignature(expiry, 'invalid-hex-format', secret, defaultEnvSalt)).toBe(false);
   });
 
   it('should return false if signature does not match', async () => {
@@ -535,7 +546,7 @@ describe('verifyHmacSignature', () => {
     const validSignature = await generateTestSignature(expiry);
     // alter the signature
     const invalidSignature = 'ff' + validSignature.substring(2);
-    expect(await verifyHmacSignature(expiry, invalidSignature, secret)).toBe(false);
+    expect(await verifyHmacSignature(expiry, invalidSignature, secret, defaultEnvSalt)).toBe(false);
   });
 
   it('should return false if signature verification throws an error', async () => {
@@ -547,29 +558,11 @@ describe('verifyHmacSignature', () => {
     const expiry = (Date.now() + 100000).toString();
     // A 4-byte signature hex (8 characters) instead of the expected 32-byte (64 characters)
     const shortSignature = 'deadbeef';
-    expect(await verifyHmacSignature(expiry, shortSignature, secret)).toBe(false);
+    expect(await verifyHmacSignature(expiry, shortSignature, secret, defaultEnvSalt)).toBe(false);
     spy.mockRestore();
   });
 
-  it('should return true for a valid signature signed with a custom environment salt', async () => {
-    const customSalt = 'my-custom-secure-salt';
-    const expiry = (Date.now() + 100000).toString();
-    const signature = await generateTestSignature(expiry, secret, customSalt);
-    const result = await verifyHmacSignature(expiry, signature, secret, customSalt);
-    expect(result).toBe(true);
-  });
-
-  it('should return true falling back to the legacy static salt when verifying a legacy token despite custom salt being present', async () => {
-    const customSalt = 'my-custom-secure-salt';
-    const expiry = (Date.now() + 100000).toString();
-    // Generate signature using legacy static salt
-    const signature = await generateTestSignature(expiry, secret, 'agent-swarm-salt');
-    // Verify using custom environment salt, which should fail and fallback to legacy static salt
-    const result = await verifyHmacSignature(expiry, signature, secret, customSalt);
-    expect(result).toBe(true);
-  });
-
-  it('should return false if signature does not match either the custom or legacy static salt', async () => {
+  it('should return false if signature does not match the provided envSalt', async () => {
     const customSalt = 'my-custom-secure-salt';
     const expiry = (Date.now() + 100000).toString();
     // Generate signature using a completely different unknown salt

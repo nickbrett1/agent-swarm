@@ -610,51 +610,14 @@ export async function verifyHmacSignature(
 
     const dataToVerify = encoder.encode(expiryStr);
 
-    // If an environment salt is provided, try verifying with it first
-    if (envSalt) {
-      const cacheKey = envSalt + ":" + secret;
-      let primaryKey = hmacKeyCache.get(cacheKey);
-      if (!primaryKey) {
-        const keyMaterial = await crypto.subtle.importKey(
-          'raw',
-          encoder.encode(secret),
-          { name: 'PBKDF2' },
-          false,
-          ['deriveKey']
-        );
-
-        primaryKey = await crypto.subtle.deriveKey(
-          {
-            name: 'PBKDF2',
-            salt: encoder.encode(envSalt),
-            iterations: 600000,
-            hash: 'SHA-256'
-          },
-          keyMaterial,
-          { name: 'HMAC', hash: 'SHA-256', length: 256 },
-          false,
-          ['verify']
-        );
-        hmacKeyCache.set(cacheKey, primaryKey);
-      }
-
-      const isValid = await crypto.subtle.verify(
-        'HMAC',
-        primaryKey,
-        sigBytes,
-        dataToVerify
-      );
-
-      if (isValid) {
-        return true;
-      }
+    if (!envSalt) {
+      console.warn("Missing required environment salt for HMAC verification.");
+      return false;
     }
 
-    // Fallback to the legacy static salt if primary verification fails (or if no envSalt is provided)
-    const legacySalt = 'agent-swarm-salt';
-    const legacyCacheKey = legacySalt + ":" + secret;
-    let fallbackKey = hmacKeyCache.get(legacyCacheKey);
-    if (!fallbackKey) {
+    const cacheKey = envSalt + ":" + secret;
+    let primaryKey = hmacKeyCache.get(cacheKey);
+    if (!primaryKey) {
       const keyMaterial = await crypto.subtle.importKey(
         'raw',
         encoder.encode(secret),
@@ -663,10 +626,10 @@ export async function verifyHmacSignature(
         ['deriveKey']
       );
 
-      fallbackKey = await crypto.subtle.deriveKey(
+      primaryKey = await crypto.subtle.deriveKey(
         {
           name: 'PBKDF2',
-          salt: encoder.encode(legacySalt),
+          salt: encoder.encode(envSalt),
           iterations: 600000,
           hash: 'SHA-256'
         },
@@ -675,12 +638,12 @@ export async function verifyHmacSignature(
         false,
         ['verify']
       );
-      hmacKeyCache.set(legacyCacheKey, fallbackKey);
+      hmacKeyCache.set(cacheKey, primaryKey);
     }
 
     return await crypto.subtle.verify(
       'HMAC',
-      fallbackKey,
+      primaryKey,
       sigBytes,
       dataToVerify
     );
