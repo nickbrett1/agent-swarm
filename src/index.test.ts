@@ -901,3 +901,89 @@ describe('getBrowserTimeLimit', () => {
         expect(getBrowserTimeLimit(env, limits)).toBe(1800);
     });
 });
+
+describe('handleAgentRequest', () => {
+    let mockEnv: any;
+    let mockRouteAgentRequest: any;
+    let originalHandleAgentRequest: any;
+
+    beforeEach(async () => {
+        vi.clearAllMocks();
+        mockEnv = { AGENT_SWARM_SECRET: 'test-secret', AGENT_SWARM_SALT: 'test-salt' };
+
+        const agentsModule = await import('agents');
+        mockRouteAgentRequest = agentsModule.routeAgentRequest as any;
+        mockRouteAgentRequest.mockResolvedValue(new Response("routed", { status: 200 }));
+
+        const indexModule = await import('./index');
+        originalHandleAgentRequest = indexModule.handleAgentRequest;
+    });
+
+    it('returns 401 if signature is missing but secret is required', async () => {
+        const req = new Request('https://example.com');
+        const url = new URL('https://example.com');
+
+        const response = await originalHandleAgentRequest(req, mockEnv, url);
+        expect(response.status).toBe(401);
+        expect(await response.text()).toBe("Unauthorized Swarm Connection: Invalid or expired signature");
+    });
+
+    it('returns 401 if signature is expired', async () => {
+        const req = new Request('https://example.com');
+        const url = new URL(`https://example.com?expiry=${Date.now() - 10000}&signature=invalid`);
+
+        const response = await originalHandleAgentRequest(req, mockEnv, url);
+        expect(response.status).toBe(401);
+    });
+
+    it('routes request if no secret is configured', async () => {
+        mockEnv.AGENT_SWARM_SECRET = undefined;
+        const req = new Request('https://example.com');
+        const url = new URL('https://example.com');
+
+        const response = await originalHandleAgentRequest(req, mockEnv, url);
+        expect(response.status).toBe(200);
+        expect(await response.text()).toBe("routed");
+        expect(mockRouteAgentRequest).toHaveBeenCalled();
+    });
+
+    it('returns 200 with default message if routeAgentRequest returns null', async () => {
+        mockEnv.AGENT_SWARM_SECRET = undefined;
+        const req = new Request('https://example.com');
+        const url = new URL('https://example.com');
+        mockRouteAgentRequest.mockResolvedValueOnce(null);
+
+        const response = await originalHandleAgentRequest(req, mockEnv, url);
+        expect(response.status).toBe(200);
+        expect(await response.text()).toBe("Cloudflare Agent Swarm is running. Use the WebSocket/RPC client to trigger runs.");
+    });
+
+    it('routes request if signature is valid', async () => {
+        const crypto = globalThis.crypto;
+        const expiry = Date.now() + 100000;
+        const encoder = new TextEncoder();
+
+        const keyMaterial = await crypto.subtle.importKey(
+            "raw", encoder.encode(mockEnv.AGENT_SWARM_SECRET),
+            { name: "PBKDF2" }, false, ["deriveKey"]
+        );
+        const saltBuffer = encoder.encode(mockEnv.AGENT_SWARM_SALT);
+        const key = await crypto.subtle.deriveKey(
+            { name: "PBKDF2", salt: saltBuffer, iterations: 600000, hash: "SHA-256" },
+            keyMaterial, { name: "HMAC", hash: "SHA-256", length: 256 }, false, ["sign"]
+        );
+        const signatureBuffer = await crypto.subtle.sign(
+            "HMAC", key, encoder.encode(expiry.toString())
+        );
+        const signatureArray = Array.from(new Uint8Array(signatureBuffer));
+        const signatureHex = signatureArray.map(b => b.toString(16).padStart(2, '0')).join('');
+
+        const req = new Request('https://example.com');
+        const url = new URL(`https://example.com?expiry=${expiry}&signature=${signatureHex}`);
+
+        const response = await originalHandleAgentRequest(req, mockEnv, url);
+        expect(response.status).toBe(200);
+        expect(await response.text()).toBe("routed");
+        expect(mockRouteAgentRequest).toHaveBeenCalled();
+    });
+});

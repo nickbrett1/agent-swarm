@@ -802,7 +802,7 @@ export function handleInfo(request: Request, env: Env): Response {
   });
 }
 
-async function handleAgentRequest(request: Request, env: Env, url: URL): Promise<Response> {
+export async function handleAgentRequest(request: Request, env: Env, url: URL): Promise<Response> {
   const expiry = url.searchParams.get("expiry");
   const signature = url.searchParams.get("signature");
 
