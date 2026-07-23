@@ -661,7 +661,7 @@ export async function verifyHmacSignature(
 
 function getCorsOrigin(request: Request, env: Env): string {
   const origin = request.headers.get("Origin");
-  const originsString = env.ALLOWED_ORIGINS || "https://fintechnick.com,https://localhost:3000";
+  const originsString = env.ALLOWED_ORIGINS || "https://fintechnick.com";
   const allowedOriginsSet = new Set(originsString.split(",").map(o => o.trim()));
 
   if (origin && allowedOriginsSet.has(origin)) {
