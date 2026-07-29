@@ -819,3 +819,52 @@ describe("StagehandBrowserHelper uncovered methods", () => {
         await expect(helper.init()).rejects.toThrow("Unable to create new browser - Cloudflare Limits: Active Sessions=1/4, Acquisitions Allowed=1, Time Until Next Acquisition=0ms");
     });
 });
+
+describe("fillStripeLocators uncovered path", () => {
+    let mockWarn: any;
+
+    beforeEach(() => {
+        mockWarn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    });
+
+    afterEach(() => {
+        mockWarn.mockRestore();
+    });
+
+    it("should handle frame-specific errors during iteration, log warning, and continue to next frame", async () => {
+        const browser = await import("./browser.js");
+        const fillStripeLocators = browser.fillStripeLocators;
+
+        const errorFrame = {
+            locator: vi.fn().mockImplementation(() => {
+                throw new Error("Frame error");
+            })
+        } as any;
+
+        const successFrame = {
+            locator: vi.fn().mockImplementation(() => {
+                return {
+                    count: vi.fn().mockResolvedValue(1),
+                    first: vi.fn().mockReturnValue({
+                        fill: vi.fn().mockResolvedValue(undefined)
+                    })
+                };
+            })
+        } as any;
+
+        const frames = [errorFrame, successFrame];
+
+        const result = await fillStripeLocators(frames, "1234", "12/25", "123", "Test Name");
+
+        expect(result).toEqual({
+            cardFilled: true,
+            expiryFilled: true,
+            cvcFilled: true,
+            nameFilled: true
+        });
+
+        expect(errorFrame.locator).toHaveBeenCalled();
+        expect(mockWarn).toHaveBeenCalledWith("Ignored frame specific error while filling Stripe:", expect.any(Error));
+        expect(successFrame.locator).toHaveBeenCalled();
+    });
+});
