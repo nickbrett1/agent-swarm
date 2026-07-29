@@ -99,7 +99,7 @@ describe("connectOverCDP patching", () => {
         const browserModule = await import("./browser.js");
 
         await expect(playwright.chromium.connectOverCDP("wss://example.com/ws", {} as any)).rejects.toThrow("general error");
-        expect(browserModule.lastCDPError).toBe(err);
+        expect(browserModule.getLastCDPError()).toBe(err);
     });
 
     it("creates new context if none exists", async () => {
