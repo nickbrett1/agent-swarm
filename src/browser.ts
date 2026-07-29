@@ -535,10 +535,11 @@ export class StagehandBrowserHelper {
     } else {
       for (let i = 0; i < elements.length; i++) {
         const el = elements[i];
-        let details = "";
-        if (el.text) details += `text: "${el.text}"`;
-        if (el.placeholder) details += (details ? ", " : "") + `placeholder/label: "${el.placeholder}"`;
-        if (el.name) details += (details ? ", " : "") + `name: "${el.name}"`;
+        const detailsArr = [];
+        if (el.text) detailsArr.push(`text: "${el.text}"`);
+        if (el.placeholder) detailsArr.push(`placeholder/label: "${el.placeholder}"`);
+        if (el.name) detailsArr.push(`name: "${el.name}"`);
+        const details = detailsArr.join(", ");
 
         summaryParts.push(`- [${el.id}] <${el.tag}${el.type ? " type=" + el.type : ""}>${details ? ` (${details})` : ""}`);
       }
