@@ -208,6 +208,14 @@ describe("StagehandBrowserHelper", () => {
     expect(url).toBe("");
   });
 
+  it("should return empty string if getActivePage().url() throws an error", async () => {
+    await helper.init();
+    const mockActivePage = { url: vi.fn().mockImplementation(() => { throw new Error("Mocked url error"); }) };
+    vi.spyOn(helper as any, "getActivePage").mockReturnValue(mockActivePage);
+    const url = await helper.getPageUrl();
+    expect(url).toBe("");
+  });
+
   it("should throw error on goto if not initialized", async () => {
     await expect(helper.goto("https://example.com")).rejects.toThrow("Browser not initialized");
   });
