@@ -71,6 +71,20 @@ function findNewestPage(context: any, currentPage: any): any {
 
 
 
+export function stripCDPQueryParams(url: string, context: string): string {
+  try {
+    const urlObj = new URL(url);
+    if (urlObj.search && urlObj.pathname.includes("/v1/devtools/browser/")) {
+      console.log(`[connectOverCDP] Stripping query parameters from upgrade request: ${urlObj.search}`);
+      urlObj.search = "";
+      return urlObj.toString();
+    }
+  } catch (e) {
+    console.warn(`Ignored invalid endpointURL ${context} in connectOverCDP wrapper:`, e);
+  }
+  return url;
+}
+
 // Intercept playwright's chromium.connectOverCDP to ensure that when it connects to a remote browser,
 // it always creates a browser context if none exists.
 let lastCDPError: Error | null = null;
@@ -87,30 +101,13 @@ if (chromium?.connectOverCDP) {
   const patchedConnectOverCDP = async (...args: any[]) => {
     console.log("Patched connectOverCDP invoked");
     if (args.length > 0 && typeof args[0] === 'string') {
-      try {
-        const urlObj = new URL(args[0]);
-        if (urlObj.search && urlObj.pathname.includes("/v1/devtools/browser/")) {
-          console.log(`[connectOverCDP] Stripping query parameters from upgrade request: ${urlObj.search}`);
-          urlObj.search = "";
-          args[0] = urlObj.toString();
-        }
-      } catch (e) {
-        console.warn("Ignored invalid endpointURL string in connectOverCDP wrapper:", e);
-      }
+      args[0] = stripCDPQueryParams(args[0], 'string');
     } else if (args.length > 0 && typeof args[0] === 'object' && args[0] !== null) {
-      const endpointURL = args[0].endpointURL || args[0].wsEndpoint;
-      if (endpointURL && typeof endpointURL === 'string') {
-        try {
-          const urlObj = new URL(endpointURL);
-          if (urlObj.search && urlObj.pathname.includes("/v1/devtools/browser/")) {
-            console.log(`[connectOverCDP] Stripping query parameters from upgrade request: ${urlObj.search}`);
-            urlObj.search = "";
-            if (args[0].endpointURL) args[0].endpointURL = urlObj.toString();
-            if (args[0].wsEndpoint) args[0].wsEndpoint = urlObj.toString();
-          }
-        } catch (e) {
-          console.warn("Ignored invalid endpointURL property in connectOverCDP wrapper:", e);
-        }
+      if (typeof args[0].endpointURL === 'string') {
+        args[0].endpointURL = stripCDPQueryParams(args[0].endpointURL, 'property');
+      }
+      if (typeof args[0].wsEndpoint === 'string') {
+        args[0].wsEndpoint = stripCDPQueryParams(args[0].wsEndpoint, 'property');
       }
     }
 
