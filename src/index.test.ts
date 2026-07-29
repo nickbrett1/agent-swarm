@@ -516,6 +516,17 @@ describe('verifyHmacSignature', () => {
     expect(result).toBe(true);
   });
 
+  it('should return false if valid signature is reused (replay attack)', async () => {
+    const expiry = (Date.now() + 100000).toString();
+    const signature = await generateTestSignature(expiry);
+
+    const result1 = await verifyHmacSignature(expiry, signature, secret, defaultEnvSalt);
+    expect(result1).toBe(true);
+
+    const result2 = await verifyHmacSignature(expiry, signature, secret, defaultEnvSalt);
+    expect(result2).toBe(false);
+  });
+
   it('should return false if token is expired', async () => {
     const expiry = (Date.now() - 100000).toString();
     const signature = await generateTestSignature(expiry);

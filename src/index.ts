@@ -582,6 +582,7 @@ ${textSummary}
 }
 
 const hmacKeyCache = new Map<string, CryptoKey>();
+const usedSignatures = new Map<string, number>();
 
 async function getOrCreateHmacKey(
   secret: string,
@@ -658,12 +659,29 @@ export async function verifyHmacSignature(
 
     const primaryKey = await getOrCreateHmacKey(secret, envSalt, encoder, getBaseKeyMaterial);
 
-    return await crypto.subtle.verify(
+    const isValid = await crypto.subtle.verify(
       'HMAC',
       primaryKey,
       sigBytes,
       dataToVerify
     );
+
+    if (isValid) {
+      if (usedSignatures.has(signatureHex)) {
+        return false;
+      }
+
+      const now = Date.now();
+      for (const [sig, exp] of usedSignatures.entries()) {
+        if (now > exp) {
+          usedSignatures.delete(sig);
+        }
+      }
+
+      usedSignatures.set(signatureHex, expiry);
+    }
+
+    return isValid;
   } catch (err) {
     console.error("Signature verification error:", err);
     return false;
