@@ -53,20 +53,6 @@ async function fillStripeLocators(frames: Frame[], card: string, expiry: string,
   return { cardFilled, expiryFilled, cvcFilled, nameFilled };
 }
 
-function findNewestPage(context: any, currentPage: any): any {
-  const pages = context?.pages();
-  if (!pages || pages.length === 0) return currentPage;
-
-  // Find the last opened page
-  for (let i = pages.length - 1; i >= 0; i--) {
-    const p = pages[i];
-    if (p) {
-      return p;
-    }
-  }
-
-  return currentPage;
-}
 
 
 
@@ -386,8 +372,12 @@ export class StagehandBrowserHelper {
     if (!this.stagehand) throw new Error("Browser not initialized");
     const currentPage = this.stagehand.context.activePage();
     try {
-      const context = this.stagehand.context;
-      return findNewestPage(context, currentPage);
+      const pages = this.stagehand.context.pages();
+      if (pages && pages.length > 0) {
+        for (let i = pages.length - 1; i >= 0; i--) {
+          if (pages[i]) return pages[i];
+        }
+      }
     } catch (e) {
       console.warn("[StagehandBrowserHelper] Failed to inspect pages in context:", e);
     }
