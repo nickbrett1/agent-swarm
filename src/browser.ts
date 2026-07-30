@@ -42,9 +42,7 @@ async function fillStripeLocators(frames: Frame[], card: string, expiry: string,
       cvcFilled = await fillLocatorIfUnfilled(frame, cvcSelector, cvc, cvcFilled);
       nameFilled = await fillLocatorIfUnfilled(frame, nameSelector, name, nameFilled);
 
-      if (cardFilled && expiryFilled && cvcFilled && nameFilled) {
-        break;
-      }
+      if (cardFilled && expiryFilled && cvcFilled && nameFilled) break;
     } catch (frameErr) {
       console.warn("Ignored frame specific error while filling Stripe:", frameErr);
     }
