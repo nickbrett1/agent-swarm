@@ -177,7 +177,7 @@ const STRIPE_NAME_SELECTORS = ["input#billingName", 'input[name="name"]', 'input
 
 export class StagehandBrowserHelper {
   private stagehand: Stagehand | null = null;
-  private elementsMap: Map<string, string> = new Map(); // id -> xpath
+  private elementsMap: Map<string, InteractiveElement> = new Map(); // id -> element
   private interactiveElements: InteractiveElement[] = [];
 
   constructor(
@@ -513,8 +513,7 @@ export class StagehandBrowserHelper {
 
     elementsData.forEach((el, index) => {
       const id = `${el.tag}_${index}`;
-      this.elementsMap.set(id, el.xpath);
-      elements.push({
+      const interactiveEl: InteractiveElement = {
         id,
         tag: el.tag,
         type: el.type,
@@ -523,7 +522,9 @@ export class StagehandBrowserHelper {
         name: el.name,
         role: el.role,
         xpath: el.xpath
-      });
+      };
+      this.elementsMap.set(id, interactiveEl);
+      elements.push(interactiveEl);
     });
 
     this.interactiveElements = elements;
@@ -570,7 +571,7 @@ export class StagehandBrowserHelper {
   async clickElement(id: string): Promise<boolean> {
     if (!this.stagehand) throw new Error("Browser not initialized");
     const page = this.getActivePage();
-    const el = this.interactiveElements.find(e => e.id === id);
+    const el = this.elementsMap.get(id);
     if (!el) {
       console.warn(`Element ID ${id} not found in map`);
       return false;
@@ -614,7 +615,7 @@ export class StagehandBrowserHelper {
   async typeElement(id: string, text: string): Promise<boolean> {
     if (!this.stagehand) throw new Error("Browser not initialized");
     const page = this.getActivePage();
-    const el = this.interactiveElements.find(e => e.id === id);
+    const el = this.elementsMap.get(id);
     if (!el) {
       console.warn(`Element ID ${id} not found in map`);
       return false;
