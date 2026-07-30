@@ -826,6 +826,26 @@ describe("StagehandBrowserHelper uncovered methods", () => {
 
         await expect(helper.init()).rejects.toThrow("Unable to create new browser - Cloudflare Limits: Active Sessions=1/4, Acquisitions Allowed=1, Time Until Next Acquisition=0ms");
     });
+
+    it("should catch and log error when clearStaleSessions fails", async () => {
+        const puppeteer = await import("@cloudflare/puppeteer");
+        puppeteer.default.sessions = vi.fn().mockResolvedValue([{ sessionId: "session1" }]);
+
+        const helper = new (await import("./browser.js")).StagehandBrowserHelper({ fetch: vi.fn() });
+        vi.spyOn(helper as any, "deleteSession").mockRejectedValue(new Error("Test deleteSession error"));
+
+        const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+        const cleared = await (helper as any).clearStaleSessions();
+
+        expect(cleared).toBe(0);
+        expect(consoleErrorSpy).toHaveBeenCalledWith(
+            "Failed to clear stale sessions:",
+            expect.any(Error)
+        );
+
+        consoleErrorSpy.mockRestore();
+    });
 });
 
 describe("fillStripeLocators uncovered path", () => {
