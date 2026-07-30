@@ -35,17 +35,28 @@ export async function fillStripeLocators(frames: Frame[], card: string, expiry: 
     return false;
   };
 
-  for (const frame of frames) {
+  const framePromises = frames.map(async (frame) => {
+    let c = false, e = false, v = false, n = false;
     try {
-      cardFilled = await fillLocatorIfUnfilled(frame, cardSelector, card, cardFilled);
-      expiryFilled = await fillLocatorIfUnfilled(frame, expirySelector, expiry, expiryFilled);
-      cvcFilled = await fillLocatorIfUnfilled(frame, cvcSelector, cvc, cvcFilled);
-      nameFilled = await fillLocatorIfUnfilled(frame, nameSelector, name, nameFilled);
-
-      if (cardFilled && expiryFilled && cvcFilled && nameFilled) break;
+      const [cRes, eRes, vRes, nRes] = await Promise.all([
+        fillLocatorIfUnfilled(frame, cardSelector, card, false),
+        fillLocatorIfUnfilled(frame, expirySelector, expiry, false),
+        fillLocatorIfUnfilled(frame, cvcSelector, cvc, false),
+        fillLocatorIfUnfilled(frame, nameSelector, name, false)
+      ]);
+      c = cRes; e = eRes; v = vRes; n = nRes;
     } catch (frameErr) {
       console.warn("Ignored frame specific error while filling Stripe:", frameErr);
     }
+    return { c, e, v, n };
+  });
+
+  const results = await Promise.all(framePromises);
+  for (const r of results) {
+    if (r.c) cardFilled = true;
+    if (r.e) expiryFilled = true;
+    if (r.v) cvcFilled = true;
+    if (r.n) nameFilled = true;
   }
 
   return { cardFilled, expiryFilled, cvcFilled, nameFilled };
