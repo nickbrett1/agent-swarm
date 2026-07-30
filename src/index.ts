@@ -335,22 +335,15 @@ export class ShopperAgent extends Agent<Env, ShopperState> {
     console.error("Error during shopping execution:", err);
 
     const errMsg = err instanceof Error ? err.message : String(err);
-    const lowerErrMsg = errMsg.toLowerCase();
-    const isBrowserClosedErr = lowerErrMsg.includes("closed") ||
-                               lowerErrMsg.includes("connection lost") ||
-                               lowerErrMsg.includes("detached") ||
-                               lowerErrMsg.includes("lost");
+
+    const BROWSER_CLOSED_REGEX = /closed|connection lost|detached|lost/i;
+    const isBrowserClosedErr = BROWSER_CLOSED_REGEX.test(errMsg);
+
+    const CLICK_ACTION_REGEX = /action: click/i;
+    const PAY_LOG_REGEX = /pay|submit|complete|buy|button_14|button_12|button_45/i;
 
     const hasClickedPay = this.state.history.some(log => {
-      const lowerLog = log.toLowerCase();
-      return lowerLog.includes("action: click") &&
-        (lowerLog.includes("pay") ||
-         lowerLog.includes("submit") ||
-         lowerLog.includes("complete") ||
-         lowerLog.includes("buy") ||
-         lowerLog.includes("button_14") ||
-         lowerLog.includes("button_12") ||
-         lowerLog.includes("button_45"));
+      return CLICK_ACTION_REGEX.test(log) && PAY_LOG_REGEX.test(log);
     });
 
     if (isBrowserClosedErr && hasClickedPay) {
