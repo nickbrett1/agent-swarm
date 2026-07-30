@@ -72,6 +72,10 @@ export function stripCDPQueryParams(url: string, context: string): string {
 // Intercept playwright's chromium.connectOverCDP to ensure that when it connects to a remote browser,
 // it always creates a browser context if none exists.
 let lastCDPError: Error | null = null;
+
+export function getLastCDPError(): Error | null {
+  return lastCDPError;
+}
 let chromium: BrowserType | undefined = undefined;
 try {
   const mod = playwrightModule as { chromium?: BrowserType, default?: { chromium?: BrowserType } };

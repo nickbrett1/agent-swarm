@@ -92,12 +92,14 @@ describe("connectOverCDP patching", () => {
     });
 
     it("rethrows general connectOverCDP errors", async () => {
-        originalConnectOverCDP.mockRejectedValueOnce(new Error("general error"));
+        const err = new Error("general error");
+        originalConnectOverCDP.mockRejectedValueOnce(err);
 
         const playwright = await import("@cloudflare/playwright");
-        await import("./browser.js");
+        const browserModule = await import("./browser.js");
 
         await expect(playwright.chromium.connectOverCDP("wss://example.com/ws", {} as any)).rejects.toThrow("general error");
+        expect(browserModule.getLastCDPError()).toBe(err);
     });
 
     it("creates new context if none exists", async () => {
