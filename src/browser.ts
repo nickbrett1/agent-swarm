@@ -14,7 +14,7 @@ const CLOSED_ERROR_REGEX = /closed|connection lost|lost/i;
 const DETACHED_FRAME_ERROR_REGEX = /detached|destroyed|context/i;
 
 
-async function fillStripeLocators(frames: Frame[], card: string, expiry: string, cvc: string, name: string): Promise<{ cardFilled: boolean, expiryFilled: boolean, cvcFilled: boolean, nameFilled: boolean }> {
+export async function fillStripeLocators(frames: Frame[], card: string, expiry: string, cvc: string, name: string): Promise<{ cardFilled: boolean, expiryFilled: boolean, cvcFilled: boolean, nameFilled: boolean }> {
   let cardFilled = false;
   let expiryFilled = false;
   let cvcFilled = false;
