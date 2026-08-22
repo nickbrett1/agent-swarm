@@ -20,7 +20,7 @@
     "agents": "latest",
     "dotenv": "^16.4.5",
     "ipaddr.js": "^2.5.0",
-    "jsdom": "^29.1.1",
+    "jsdom": "^30.0.1",
     "vitest": "^4.1.11",
     "zod-to-json-schema": "^3.25.2"
   },
