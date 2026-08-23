@@ -123,14 +123,4 @@ workflows:
           filters:
             branches:
               only: main
-      - deploy-to-cloudflare:
-          context: common
-          name: deploy-to-cloudflare-preview
-          environment: "preview"
-          doppler_config: "stg"
-          requires:
-            - build
-          filters:
-            branches:
-              ignore: main
 
