@@ -27,7 +27,12 @@ steps:
       - if [ -f package-lock.json ]; then npm ci --no-audit --no-fund --prefer-offline; else npm install --no-audit --no-fund; fi
       - npm run build --if-present
       - npm run lint --if-present
-      - CI=true npm test --if-present
+      - |
+        if node -e "const s = require('./package.json').scripts || {}; process.exit(s.test && !s.test.includes('no test specified') ? 0 : 1)"; then
+          CI=true npm test
+        else
+          echo "No test script (or the npm placeholder) - skipping tests."
+        fi
 
   - label: ":rocket: Deploy (production)"
     key: deploy
@@ -55,6 +60,14 @@ steps:
         if ! command -v doppler >/dev/null 2>&1; then
           apt-get update && apt-get install -y --no-install-recommends curl ca-certificates
           curl -Ls --tlsv1.2 --proto "=https" --retry 3 https://cli.doppler.com/install.sh | sh
+        fi
+      - |
+        # sync-doppler-secrets.sh needs jq and exits without it ("jq is not
+        # installed or not in PATH"); CircleCI's deploy job installed it, and the
+        # failure lands AFTER a successful wrangler deploy, which reads as a
+        # deploy failure. Install it first, once, before anything else.
+        if ! command -v jq >/dev/null 2>&1; then
+          apt-get update && apt-get install -y --no-install-recommends jq
         fi
       - |
         # CircleCI supplied the Cloudflare credentials through its context; there
