@@ -41,4 +41,11 @@ else
     echo "INFO: socat tunnel is already running." >> "$LOG_FILE"
 fi
 
+echo "INFO: Checking the container agent..."
+if [ -x "/workspaces/agent-swarm/scripts/agent-dev.sh" ]; then
+    "/workspaces/agent-swarm/scripts/agent-dev.sh" start || true
+else
+    echo "WARN: scripts/agent-dev.sh not found, skipping the container agent"
+fi
+
 echo "INFO: Services check/startup complete." >> "$LOG_FILE"
